@@ -1,0 +1,31 @@
+{
+  "name": "skills-sets",
+  "version": "0.0.1",
+  "description": "Define, share, and install named sets of agent skills. Pre-release placeholder for the skill-set CLI and manifest format.",
+  "type": "module",
+  "bin": {
+    "skills-sets": "bin/cli.mjs",
+    "skill-set": "bin/cli.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "keywords": [
+    "agent",
+    "skills",
+    "agent-skills",
+    "skill-set",
+    "ai",
+    "cli"
+  ],
+  "author": "Harry Martin <hcjmartin@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hcjmartin/skill-set.git"
+  },
+  "homepage": "https://github.com/hcjmartin/skill-set#readme",
+  "engines": {
+    "node": ">=20"
+  }
+}

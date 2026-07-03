@@ -1,0 +1,6 @@
+{
+  "name": "bad-author-uri",
+  "version": "1.0.0",
+  "author": { "name": "Harry Martin", "uri": "not-a-uri" },
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

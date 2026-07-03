@@ -1,0 +1,6 @@
+{
+  "name": "author-empty-name",
+  "version": "1.0.0",
+  "author": { "name": "" },
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

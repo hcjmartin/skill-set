@@ -1,0 +1,5 @@
+{
+  "name": "skills-item-not-string",
+  "version": "1.0.0",
+  "skills": [42]
+}

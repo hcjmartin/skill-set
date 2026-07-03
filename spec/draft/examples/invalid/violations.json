@@ -1,0 +1,21 @@
+{
+  "missing-name.skill-set.json": { "keyword": "required", "instancePath": "" },
+  "missing-version.skill-set.json": { "keyword": "required", "instancePath": "" },
+  "missing-skills.skill-set.json": { "keyword": "required", "instancePath": "" },
+  "Bad_Name.skill-set.json": { "keyword": "pattern", "instancePath": "/name" },
+  "aaaaaaaaaa-aaaaaaaaaa-aaaaaaaaaa-aaaaaaaaaa-aaaaaaaaaa-aaaaaaaaaa.skill-set.json": { "keyword": "maxLength", "instancePath": "/name" },
+  "bad-version.skill-set.json": { "keyword": "pattern", "instancePath": "/version" },
+  "empty-skills.skill-set.json": { "keyword": "minItems", "instancePath": "/skills" },
+  "duplicate-skills.skill-set.json": { "keyword": "uniqueItems", "instancePath": "/skills" },
+  "skills-not-array.skill-set.json": { "keyword": "type", "instancePath": "/skills" },
+  "extra-property.skill-set.json": { "keyword": "additionalProperties", "instancePath": "" },
+  "author-missing-name.skill-set.json": { "keyword": "required", "instancePath": "/author" },
+  "author-extra-property.skill-set.json": { "keyword": "additionalProperties", "instancePath": "/author" },
+  "author-empty-name.skill-set.json": { "keyword": "minLength", "instancePath": "/author/name" },
+  "bad-author-url.skill-set.json": { "keyword": "format", "instancePath": "/author/url" },
+  "bad-author-uri.skill-set.json": { "keyword": "format", "instancePath": "/author/uri" },
+  "bad-homepage.skill-set.json": { "keyword": "format", "instancePath": "/homepage" },
+  "empty-skill-string.skill-set.json": { "keyword": "minLength", "instancePath": "/skills/0" },
+  "skills-item-not-string.skill-set.json": { "keyword": "type", "instancePath": "/skills/0" },
+  "bad-schema-uri.skill-set.json": { "keyword": "format", "instancePath": "/$schema" }
+}

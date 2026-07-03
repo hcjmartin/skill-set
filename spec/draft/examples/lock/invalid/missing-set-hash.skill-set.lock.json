@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "missing-set-hash",
+  "setVersion": "1.0.0",
+  "skills": {
+    "hcjmartin/skills-repo@skill-creator": {
+      "skill": "skill-creator",
+      "computedHash": "781bd6d3f9b19f8c9af6b53d8d0e4876d0183841b565db34ca7092ffa412d111"
+    }
+  }
+}

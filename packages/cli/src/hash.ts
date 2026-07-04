@@ -42,8 +42,9 @@ export function specFolderHash(dir: string): string {
 /**
  * Byte-compatible with vercel-labs/skills computeSkillFolderHash (v1.5.x) — used ONLY to
  * interoperate with skills-lock.json (D18). Locale-sensitive by upstream design; not the spec hash.
- * Only valid against installer-produced folders: the upstream installer strips metadata.json
- * (and __pycache__/__pypackages__) while copying, so a raw source tree will not match its lock.
+ * Matches upstream lock entries only for disk-based installs, computed over the SOURCE folder
+ * (the installer strips metadata.json from the copy). GitHub blob-path installs record a
+ * server-side snapshot hash instead, which no local bytes reproduce (see CHANGELOG).
  */
 export function compatFolderHash(dir: string): string {
   const files = collectFiles(dir, dir)

@@ -105,6 +105,8 @@ Per-member entry:
 
 **`setHash`**: the SHA-256, in lowercase hex, over the concatenation — in UTF-8-byte-order of the locator — of `<locator>\n<computedHash>\n` for every member, all strings encoded as UTF-8.
 
+**Serialized field order** (the §7 "unless a field specifies otherwise" carve-out, for readability): top level `version, name, setVersion, setHash, skills`; member entries `skill, computedHash, sourceType, ref` (absent optionals omitted); `skills` keys in UTF-8-byte-order.
+
 ### Verification
 
 - **Default verify**: every locked member MUST be present at its installed location; implementations MAY compare against recorded hashes without recomputation (e.g. using other trusted records) and SHOULD say which checks ran.
@@ -114,7 +116,7 @@ Per-member entry:
 
 `computedHash` is a SHA-256 over the installed skill folder, fully defined by this section:
 
-1. **Enumerate** files under the skill folder, recursively. Skip directories named exactly `.git` or `node_modules` (at any depth). Skip symbolic links entirely (do not follow them). Every other file is included.
+1. **Enumerate** files under the skill folder, recursively. Skip directories named exactly `.git` or `node_modules` (at any depth). Skip symbolic links entirely (do not follow them). Every other **regular file** is included; non-regular files (FIFOs, sockets, device nodes) are excluded.
 2. For each file, record its **relative path** from the skill folder — with `/` as the separator on all platforms — and its **raw bytes** (no encoding or newline normalization).
 3. **Sort** the file list by lexicographic comparison of the relative paths' **UTF-8 byte sequences** (this is a locale-independent total order; distinct paths never compare equal).
 4. **Hash**: feed SHA-256, for each file in sorted order: the relative path as UTF-8 bytes, a single `0x00` byte, the file's content bytes, a single `0x00` byte.

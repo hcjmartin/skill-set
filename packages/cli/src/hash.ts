@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 type FileEntry = { rel: string; bytes: Buffer }
@@ -10,20 +10,24 @@ function collectFiles(dir: string, base: string): FileEntry[] {
   const out: FileEntry[] = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
-    if (entry.isSymbolicLink()) continue
-    if (entry.isDirectory()) {
+    // Some filesystems (FUSE/NFS) report unknown dirent types; classify those via lstat.
+    const kind =
+      entry.isSymbolicLink() || entry.isDirectory() || entry.isFile() ? entry : lstatSync(full)
+    if (kind.isSymbolicLink()) continue
+    if (kind.isDirectory()) {
       if (SKIPPED_DIRS.has(entry.name)) continue
       out.push(...collectFiles(full, base))
-    } else if (entry.isFile()) {
+    } else if (kind.isFile()) {
       out.push({ rel: relative(base, full).split('\\').join('/'), bytes: readFileSync(full) })
     }
   }
   return out
 }
 
-/** The normative spec hash (spec §6): UTF-8-byte-order sort, NUL framing, locale-independent. */
+/** The normative spec hash (spec §6): NFC paths, UTF-8-byte-order sort, NUL framing, locale-independent. */
 export function specFolderHash(dir: string): string {
-  const files = collectFiles(dir, dir)
+  // NFC per spec §6 — APFS reports decomposed (NFD) filenames, Linux stores them as written.
+  const files = collectFiles(dir, dir).map((f) => ({ ...f, rel: f.rel.normalize('NFC') }))
   files.sort((a, b) => Buffer.compare(Buffer.from(a.rel, 'utf8'), Buffer.from(b.rel, 'utf8')))
   const hash = createHash('sha256')
   for (const f of files) {
@@ -38,6 +42,8 @@ export function specFolderHash(dir: string): string {
 /**
  * Byte-compatible with vercel-labs/skills computeSkillFolderHash (v1.5.x) — used ONLY to
  * interoperate with skills-lock.json (D18). Locale-sensitive by upstream design; not the spec hash.
+ * Only valid against installer-produced folders: the upstream installer strips metadata.json
+ * (and __pycache__/__pypackages__) while copying, so a raw source tree will not match its lock.
  */
 export function compatFolderHash(dir: string): string {
   const files = collectFiles(dir, dir)

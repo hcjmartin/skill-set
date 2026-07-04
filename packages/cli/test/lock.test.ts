@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ErrorCodes } from '../src/errors.ts'
+import { ErrorCodes, SkillSetError } from '../src/errors.ts'
 import { setHash } from '../src/hash.ts'
 import { createSetLock, parseSetLock, parseSkillsLock, serializeSetLock } from '../src/lock.ts'
 
@@ -39,6 +39,12 @@ describe('parseSetLock', () => {
     if (!result.ok) expect(result.error.code).toBe(ErrorCodes.INVALID_LOCK)
   })
 
+  it('reports a non-object root as a shape error, not a version error', () => {
+    const result = parseSetLock('[]')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe(ErrorCodes.INVALID_LOCK)
+  })
+
   it('enforces name↔filename with the lock suffix', () => {
     const result = parseSetLock(lockFixture, { filename: 'other.skill-set.lock.json' })
     expect(result.ok).toBe(false)
@@ -72,6 +78,10 @@ describe('serializeSetLock — determinism (spec §5/§7)', () => {
     expect(serializeSetLock(forward)).toBe(serializeSetLock(reversed))
   })
 
+  it('createSetLock rejects an empty member map (a zero-member lock is schema-invalid)', () => {
+    expect(() => createSetLock('demo', '1.0.0', {})).toThrow(SkillSetError)
+  })
+
   it('createSetLock computes the setHash from its members', () => {
     const lock = createSetLock('demo', '1.0.0', {
       'a/b@c': { skill: 'c', computedHash: HASH_A },
@@ -103,6 +113,12 @@ describe('parseSkillsLock — upstream adapter', () => {
     if (result.ok) {
       expect(result.data.skills['find-skills']!.computedHash).toMatch(/^781bd6d3/)
     }
+  })
+
+  it('rejects a v1 entry missing required fields with a shape error, not a wipe', () => {
+    const result = parseSkillsLock(JSON.stringify({ version: 1, skills: { x: { source: 'a' } } }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe(ErrorCodes.INVALID_LOCK)
   })
 
   it('fails loudly on an unknown upstream version — never wipes', () => {

@@ -117,13 +117,15 @@ Per-member entry:
 `computedHash` is a SHA-256 over the installed skill folder, fully defined by this section:
 
 1. **Enumerate** files under the skill folder, recursively. Skip directories named exactly `.git` or `node_modules` (at any depth). Skip symbolic links entirely (do not follow them). Every other **regular file** is included; non-regular files (FIFOs, sockets, device nodes) are excluded.
-2. For each file, record its **relative path** from the skill folder — with `/` as the separator on all platforms — and its **raw bytes** (no encoding or newline normalization).
+2. For each file, record its **relative path** from the skill folder — with `/` as the separator on all platforms, normalized to **Unicode NFC** (filesystems disagree on the stored form: APFS reports decomposed names, most others store as written) — and its **raw bytes** (no encoding or newline normalization).
 3. **Sort** the file list by lexicographic comparison of the relative paths' **UTF-8 byte sequences** (this is a locale-independent total order; distinct paths never compare equal).
 4. **Hash**: feed SHA-256, for each file in sorted order: the relative path as UTF-8 bytes, a single `0x00` byte, the file's content bytes, a single `0x00` byte.
 5. A folder that enumerates to zero files hashes to the SHA-256 of empty input.
 6. The result is the lowercase hex digest.
 
 > Note: this hash is deliberately self-contained and does **not** byte-match the `skills` ecosystem's internal `computeSkillFolderHash` (whose file ordering is locale-dependent). A reference implementation MAY additionally compute ecosystem-compatible hashes to interoperate with `skills-lock.json`, but that is outside this specification.
+>
+> Note: content bytes are hashed as stored on disk. Checkout-time filters that rewrite bytes (e.g. git `core.autocrlf` or `.gitattributes` text conversion) change the hash before any implementation runs; skill content that must verify across platforms should pin such filters off.
 
 ## 7. Generated artifacts & determinism
 

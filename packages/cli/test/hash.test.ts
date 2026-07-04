@@ -76,6 +76,21 @@ describe('specFolderHash', () => {
     expect(specFolderHash(dir)).toBe(specFolderHash(dir))
   })
 
+  it('normalizes paths to NFC, so NFD and NFC spellings hash identically (spec §6)', () => {
+    const nfc = '\u00e9.txt' // e-acute precomposed
+    const nfd = 'e\u0301.txt' // e + combining acute
+    const a = tmpFolder({ [nfc]: 'x\n' })
+    const b = tmpFolder({ [nfd]: 'x\n' })
+    const expected = createHash('sha256')
+    expected.update(nfc, 'utf8')
+    expected.update(Buffer.from([0]))
+    expected.update('x\n', 'utf8')
+    expected.update(Buffer.from([0]))
+    const digest = expected.digest('hex')
+    expect(specFolderHash(a)).toBe(digest)
+    expect(specFolderHash(b)).toBe(digest)
+  })
+
   it('sorts by UTF-8 bytes, not UTF-16 code units (astral vs BMP filenames)', () => {
     // U+FFFD (ef bf bd) precedes U+1F600 (f0 9f 98 80) in UTF-8 bytes, but JS default
     // sort compares UTF-16 code units, where the surrogate pair (d83d…) comes first.

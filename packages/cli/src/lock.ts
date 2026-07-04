@@ -37,7 +37,7 @@ export function parseSetLock(text: string, opts?: { filename?: string }): Result
   // Version gate before shape validation: unknown versions fail loudly and are never
   // discarded or rewritten (spec §5 — the upstream wipe-on-mismatch anti-pattern).
   const raw = json.data as Record<string, unknown> | null
-  if (raw !== null && typeof raw === 'object' && raw.version !== SET_LOCK_VERSION) {
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw) && raw.version !== SET_LOCK_VERSION) {
     return fail(
       ErrorCodes.LOCK_VERSION,
       `${context} has lock format version ${JSON.stringify(raw.version)}, but this skill-set implementation reads version ${SET_LOCK_VERSION}`,
@@ -89,6 +89,11 @@ export function createSetLock(
   setVersion: string,
   members: Record<string, SetLockMember>,
 ): SetLock {
+  if (Object.keys(members).length === 0) {
+    throw new SkillSetError(ErrorCodes.INVALID_LOCK, 'A set-lock must record at least one member', {
+      hint: 'Write a lock only after at least one member has resolved.',
+    })
+  }
   return {
     version: SET_LOCK_VERSION,
     name,
@@ -149,7 +154,7 @@ export function parseSkillsLock(text: string, opts?: { filename?: string }): Res
   if (!json.ok) return json
 
   const raw = json.data as Record<string, unknown> | null
-  if (raw !== null && typeof raw === 'object' && raw.version !== SKILLS_LOCK_VERSION) {
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw) && raw.version !== SKILLS_LOCK_VERSION) {
     return fail(
       ErrorCodes.LOCK_VERSION,
       `${context} has version ${JSON.stringify(raw.version)}, but this skill-set implementation reads upstream lock version ${SKILLS_LOCK_VERSION}`,

@@ -1,0 +1,6 @@
+{
+  "name": "author-extra-property",
+  "version": "1.0.0",
+  "author": { "name": "Harry Martin", "twitter": "@hcjmartin" },
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

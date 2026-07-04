@@ -1,0 +1,5 @@
+{
+  "name": "bad-version",
+  "version": "1.0",
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

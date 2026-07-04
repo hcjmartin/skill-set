@@ -1,0 +1,6 @@
+{
+  "$schema": "not-a-uri",
+  "name": "bad-schema-uri",
+  "version": "1.0.0",
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "author-missing-name",
+  "version": "1.0.0",
+  "author": { "url": "https://github.com/hcjmartin" },
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

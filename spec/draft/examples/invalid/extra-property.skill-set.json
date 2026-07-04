@@ -1,0 +1,6 @@
+{
+  "name": "extra-property",
+  "version": "1.0.0",
+  "skills": ["hcjmartin/skills-repo@skill-creator"],
+  "unknownField": true
+}

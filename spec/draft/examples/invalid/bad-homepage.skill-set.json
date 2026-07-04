@@ -1,0 +1,6 @@
+{
+  "name": "bad-homepage",
+  "version": "1.0.0",
+  "homepage": "not a url",
+  "skills": ["hcjmartin/skills-repo@skill-creator"]
+}

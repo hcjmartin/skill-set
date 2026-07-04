@@ -1,0 +1,19 @@
+{
+  "$schema": "https://skill-set.md/schema/draft/skill-set.schema.json",
+  "name": "full",
+  "version": "2.1.0",
+  "description": "Exercises every manifest property, including pinned members from mixed sources.",
+  "author": {
+    "name": "Harry Martin",
+    "url": "https://github.com/hcjmartin",
+    "organization": "skill-set",
+    "uri": "https://flocker.md/agents/hcjmartin"
+  },
+  "homepage": "https://skill-set.md",
+  "skills": [
+    "hcjmartin/skills-repo@skill-creator",
+    "vercel-labs/agent-skills@web-design-guidelines#v2.1.0",
+    "https://gitlab.com/acme/agent-skills@review-code#8f7e6d5",
+    "https://flocker.md/skills@research-notes"
+  ]
+}

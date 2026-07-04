@@ -1,0 +1,4 @@
+{
+  "missing-set-hash.skill-set.lock.json": { "keyword": "required", "instancePath": "" },
+  "bad-computed-hash.skill-set.lock.json": { "keyword": "pattern", "instancePath": "/skills/acme-skills@review-code/computedHash" }
+}

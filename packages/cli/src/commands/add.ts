@@ -44,7 +44,7 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   // unanswerable prompt aborts with nothing fetched.
   const host = httpsHost(source)
   if (host !== undefined && !isAllowedHost(host)) {
-    const proceed = await ctx.ui.confirm(`${JSON.stringify(host)} is not a recognised skill-set host. Fetch from it anyway?`)
+    const proceed = await ctx.ui.confirm(`${JSON.stringify(host)} is not a recognised skill-set provider. Fetch from it anyway?`)
     if (!proceed.ok) return proceed
     if (!proceed.data) {
       ctx.ui.out('Aborted — nothing fetched.')

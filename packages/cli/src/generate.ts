@@ -42,19 +42,21 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
 
   const n = manifest.skills.length
   const plural = n === 1 ? 'skill' : 'skills'
-  const trigger = `A set of ${n} agent ${plural}. Use when installing, verifying, or updating the "${manifest.name}" skill set.`
+  const trigger = `A set of ${n} agent ${plural}. Use when reviewing, installing, verifying, or updating the "${manifest.name}" skill set.`
   const description = manifest.description === undefined ? trigger : `${manifest.description} ${trigger}`
 
   // Every scalar is JSON-quoted: valid set names like "no" or "123" would otherwise
   // parse as YAML boolean/int, and JSON strings are valid YAML double-quoted scalars.
   const lines: string[] = ['---', `name: ${JSON.stringify(manifest.name)}`, `description: ${JSON.stringify(description)}`]
   if (opts.license !== undefined) lines.push(`license: ${JSON.stringify(opts.license)}`)
-  lines.push('---', '', `# ${manifest.name}`, '', '## Overview', '')
-  if (manifest.description !== undefined) lines.push(manifest.description, '')
+  lines.push('---', '', `# ${manifest.name}`, '')
+
+  if (manifest.description !== undefined) {
+    lines.push('## Description', '', manifest.description, '')
+  }
+
   lines.push(
-    `This set bundles ${n} ${plural}. It is generated from \`${manifest.name}${MANIFEST_SUFFIX}\`. Updates should be made to the manifest, not this file.`,
-    '',
-    '## Skills in this set',
+    `## Skills in this set (${n})`,
     '',
     '| Skill | Description | Source |',
     '| --- | --- | --- |',
@@ -72,7 +74,7 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
 
   lines.push(
     '',
-    '## Installation',
+    '## Install',
     '',
     `This set is defined by \`${manifest.name}${MANIFEST_SUFFIX}\`. Install the referenced skills into a project with:`,
     '',
@@ -80,13 +82,20 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
     `npx @skill-set/cli install ${manifest.name}`,
     '```',
     '',
-    '## Usage',
+  )
+
+  lines.push(
+    '## Updates',
     '',
-    'Skills install in `.agents/skills/<skill>/`',
+    `This set bundles ${n} ${plural}, as specified in \`${manifest.name}${MANIFEST_SUFFIX}\`. Changes should be made to the manifest, not this file.`,
     '',
+  )
+
+  lines.push(
     '## Provenance',
     '',
   )
+
   if (lock === undefined) {
     lines.push(
       `No lock is recorded for this set. Capture the resolved content of every member with \`npx @skill-set/cli lock ${manifest.name}\`.`,

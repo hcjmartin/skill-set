@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "bad-set-hash",
+  "setVersion": "1.0.0",
+  "setHash": "not-a-hash",
+  "skills": {
+    "acme-skills@review-code": { "skill": "review-code", "computedHash": "781bd6d3f9b19f8c9af6b53d8d0e4876d0183841b565db34ca7092ffa412d111" }
+  }
+}

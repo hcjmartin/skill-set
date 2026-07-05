@@ -12,7 +12,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "check": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test"
+    "check": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test",
+    "coverage": "pnpm --filter @skill-set/cli run test:coverage"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

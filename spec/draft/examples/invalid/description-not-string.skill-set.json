@@ -1,0 +1,6 @@
+{
+  "name": "description-not-string",
+  "version": "1.0.0",
+  "description": 123,
+  "skills": ["owner/repo@a"]
+}

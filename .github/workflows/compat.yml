@@ -1,6 +1,9 @@
 name: Upstream compat
 
-# Live-network drift guard (D12): installs a real skill through the pinned `npx skills`
+permissions:
+  contents: read
+
+# Live-network drift guard: installs a real skill through the pinned `npx skills`
 # and asserts hash byte-parity. Scheduled rather than per-PR so green CI never depends
 # on npm/GitHub availability; drift arrives with upstream releases, not our commits.
 on:

@@ -1,5 +1,10 @@
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 
+/** Lexicographic comparison of UTF-8 byte sequences — the spec's deterministic order (§2.3/§7). */
+export function compareUtf8(a: string, b: string): number {
+  return Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
+}
+
 /** Parse per spec §2.1: valid RFC 8259 JSON with duplicate object keys rejected. */
 export function parseStrictJson(text: string, context?: string): Result<unknown> {
   let value: unknown

@@ -41,7 +41,7 @@ export function specFolderHash(dir: string): string {
 
 /**
  * Byte-compatible with vercel-labs/skills computeSkillFolderHash (v1.5.x) — used ONLY to
- * interoperate with skills-lock.json (D18). Locale-sensitive by upstream design; not the spec hash.
+ * interoperate with skills-lock.json. Locale-sensitive by upstream design; not the spec hash.
  * Matches upstream lock entries only for disk-based installs, computed over the SOURCE folder
  * (the installer strips metadata.json from the copy). GitHub blob-path installs record a
  * server-side snapshot hash instead, which no local bytes reproduce (see CHANGELOG).

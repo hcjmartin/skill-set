@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "bad-skill-name",
+  "setVersion": "1.0.0",
+  "setHash": "781bd6d3f9b19f8c9af6b53d8d0e4876d0183841b565db34ca7092ffa412d111",
+  "skills": {
+    "acme-skills@review-code": { "skill": "Bad_Name", "computedHash": "781bd6d3f9b19f8c9af6b53d8d0e4876d0183841b565db34ca7092ffa412d111" }
+  }
+}

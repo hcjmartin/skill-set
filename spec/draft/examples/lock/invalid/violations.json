@@ -1,4 +1,58 @@
 {
-  "missing-set-hash.skill-set.lock.json": { "keyword": "required", "instancePath": "" },
-  "bad-computed-hash.skill-set.lock.json": { "keyword": "pattern", "instancePath": "/skills/acme-skills@review-code/computedHash" }
+  "missing-set-hash.skill-set.lock.json": {
+    "keyword": "required",
+    "instancePath": ""
+  },
+  "bad-computed-hash.skill-set.lock.json": {
+    "keyword": "pattern",
+    "instancePath": "/skills/acme-skills@review-code/computedHash"
+  },
+  "bad-lock-version.skill-set.lock.json": {
+    "keyword": "const",
+    "instancePath": "/version"
+  },
+  "bad-lock-name.skill-set.lock.json": {
+    "keyword": "pattern",
+    "instancePath": "/name"
+  },
+  "lock-name-too-long.skill-set.lock.json": {
+    "keyword": "maxLength",
+    "instancePath": "/name"
+  },
+  "bad-set-version.skill-set.lock.json": {
+    "keyword": "pattern",
+    "instancePath": "/setVersion"
+  },
+  "bad-set-hash.skill-set.lock.json": {
+    "keyword": "pattern",
+    "instancePath": "/setHash"
+  },
+  "empty-skills.skill-set.lock.json": {
+    "keyword": "minProperties",
+    "instancePath": "/skills"
+  },
+  "member-missing-skill.skill-set.lock.json": {
+    "keyword": "required",
+    "instancePath": "/skills/acme-skills@review-code"
+  },
+  "member-extra-property.skill-set.lock.json": {
+    "keyword": "additionalProperties",
+    "instancePath": "/skills/acme-skills@review-code"
+  },
+  "bad-skill-name.skill-set.lock.json": {
+    "keyword": "pattern",
+    "instancePath": "/skills/acme-skills@review-code/skill"
+  },
+  "empty-source-type.skill-set.lock.json": {
+    "keyword": "minLength",
+    "instancePath": "/skills/acme-skills@review-code/sourceType"
+  },
+  "empty-ref.skill-set.lock.json": {
+    "keyword": "minLength",
+    "instancePath": "/skills/acme-skills@review-code/ref"
+  },
+  "root-extra-property.skill-set.lock.json": {
+    "keyword": "additionalProperties",
+    "instancePath": ""
+  }
 }

@@ -36,7 +36,8 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "ci-info": "^4.4.0",
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "tsdown": "^0.22.3",

@@ -7,7 +7,7 @@ import { parseSkillsLock } from './lock.ts'
 import { NAME_PATTERN } from './manifest.ts'
 import { runCommand, type SpawnOptions, type SpawnOutcome } from './spawn.ts'
 
-/** Upstream pin, minor-level (D12): patch releases float in, minor/major bumps are deliberate. */
+/** Upstream pin, minor-level: patch releases float in, minor/major bumps are deliberate. */
 export const SKILLS_PIN = '1.5'
 
 /** Where resolved skills land, relative to the project root (spec §4; upstream UNIVERSAL_SKILLS_DIR). */
@@ -55,7 +55,7 @@ export interface SkillsInvocation {
   env: Record<string, string>
 }
 
-/** Builds the pinned upstream invocation for one member: explicit args + prompt suppression, always (D12). */
+/** Builds the pinned upstream invocation for one member: explicit args + prompt suppression, always. */
 export function buildAddInvocation(locator: string, opts?: { global?: boolean }): SkillsInvocation {
   const { source, skill, ref } = parseLocator(locator)
   const sourceArg = ref === undefined ? source : `${source}#${ref}`

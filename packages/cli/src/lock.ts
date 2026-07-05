@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import * as z from 'zod'
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { setHash } from './hash.ts'
-import { parseStrictJson } from './json.ts'
+import { compareUtf8, parseStrictJson } from './json.ts'
 import { NAME_PATTERN, SEMVER_PATTERN } from './manifest.ts'
 
 export const LOCK_SUFFIX = '.skill-set.lock.json'
@@ -106,9 +106,7 @@ export function createSetLock(
 /** Canonical serialization per spec §5/§7: fixed field order, byte-sorted member keys, 2-space, trailing LF. */
 export function serializeSetLock(lock: SetLock): string {
   const skills: Record<string, unknown> = {}
-  const locators = Object.keys(lock.skills).sort((a, b) =>
-    Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8')),
-  )
+  const locators = Object.keys(lock.skills).sort(compareUtf8)
   for (const locator of locators) {
     const m = lock.skills[locator]!
     skills[locator] = {

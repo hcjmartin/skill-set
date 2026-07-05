@@ -11,23 +11,23 @@ export function parseStrictJson(text: string, context?: string): Result<unknown>
   try {
     value = JSON.parse(text)
   } catch (cause) {
+    // The V8 parse message (RFC 8259 grammar violations) quotes the offending bytes; for
+    // attacker-supplied manifests that would echo remote content, so the message stays
+    // structural and the detail rides on `cause`.
     return {
       ok: false,
-      error: new SkillSetError(
-        ErrorCodes.INVALID_JSON,
-        `${context ?? 'Input'} is not valid JSON: ${(cause as Error).message}`,
-        { cause },
-      ),
+      error: new SkillSetError(ErrorCodes.INVALID_JSON, `${context ?? 'Input'} is not valid JSON`, { cause }),
     }
   }
   const dup = findDuplicateKey(text)
   if (dup !== undefined) {
+    // The duplicated key is remote-controlled text, so it is not named in the error (spec §2.1).
     return {
       ok: false,
       error: new SkillSetError(
         ErrorCodes.INVALID_JSON,
-        `${context ?? 'Input'} contains a duplicate object key: ${JSON.stringify(dup)}`,
-        { hint: 'Strict JSON (spec §2.1) forbids duplicate keys — remove one of the entries.' },
+        `${context ?? 'Input'} contains a duplicate object key`,
+        { hint: 'Skill-set files forbid duplicate keys — remove one of the entries.' },
       ),
     }
   }

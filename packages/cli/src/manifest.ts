@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import * as z from 'zod'
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { parseStrictJson } from './json.ts'
+import { structuralIssues } from './zod-issues.ts'
 
 export const MANIFEST_SUFFIX = '.skill-set.json'
 export const DRAFT_SCHEMA_URL = 'https://skill-set.md/schema/draft/skill-set.schema.json'
@@ -38,20 +39,22 @@ export function parseManifest(text: string, opts?: { filename?: string }): Resul
 
   const parsed = manifestSchema.safeParse(json.data)
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
-    return fail(ErrorCodes.INVALID_MANIFEST, `${context} does not match the skill-set schema:\n  - ${issues.join('\n  - ')}`, {
+    const issues = structuralIssues(parsed.error.issues)
+    return fail(ErrorCodes.INVALID_MANIFEST, `${context} does not match the skill-set schema:\n  - ${issues.lines.join('\n  - ')}`, {
       hint: 'The schema is served at https://skill-set.md/schema/draft/skill-set.schema.json.',
-      data: parsed.error.issues,
+      data: issues.data,
     })
   }
   const manifest = parsed.data
 
+  // Positional only: a locator is unconstrained remote text, so the error names its
+  // index in skills[] rather than echoing the value (spec §2.4).
   const seen = new Set<string>()
-  for (const locator of manifest.skills) {
+  for (const [index, locator] of manifest.skills.entries()) {
     if (seen.has(locator)) {
-      return fail(ErrorCodes.DUPLICATE_MEMBER, `${context} lists member ${JSON.stringify(locator)} more than once`, {
-        hint: 'Duplicate skills[] entries are invalid (spec §2.4) — remove the repeated locator.',
-        data: { locator },
+      return fail(ErrorCodes.DUPLICATE_MEMBER, `${context} lists a member skill more than once (skills[${index}])`, {
+        hint: 'Duplicate skills[] entries are invalid — remove the repeated locator.',
+        data: { index },
       })
     }
     seen.add(locator)
@@ -60,14 +63,13 @@ export function parseManifest(text: string, opts?: { filename?: string }): Resul
   if (manifest.$schema !== undefined) {
     const segment = /\/schema\/(draft|v\d+)\//.exec(manifest.$schema)?.[1]
     if (segment === undefined || !SUPPORTED_SCHEMA_VERSIONS.has(segment)) {
-      return fail(
-        ErrorCodes.SCHEMA_VERSION,
-        `${context} declares schema version ${segment ?? JSON.stringify(manifest.$schema)}, which this implementation does not support`,
-        {
-          hint: `Supported versions: ${[...SUPPORTED_SCHEMA_VERSIONS].join(', ')}. Consumers must reject unknown versions rather than best-effort parse (spec §2.5).`,
-          data: { $schema: manifest.$schema },
-        },
-      )
+      // The version segment (draft/v9) is a structural token; the raw $schema URL is remote
+      // content and is not echoed. When the URL has no recognisable segment, say so structurally (spec §2.5).
+      const declared = segment === undefined ? 'a $schema URL with no recognised version segment' : `schema version ${segment}`
+      return fail(ErrorCodes.SCHEMA_VERSION, `${context} declares ${declared}, which this implementation does not support`, {
+        hint: `Supported versions: ${[...SUPPORTED_SCHEMA_VERSIONS].join(', ')}. Consumers must reject unknown versions rather than best-effort parse.`,
+        data: segment === undefined ? {} : { schemaVersion: segment },
+      })
     }
   }
 

@@ -12,6 +12,8 @@ export interface UiOptions {
   yes: boolean
   /** Overrides TTY/CI detection (tests, or a caller that knows better). */
   interactive?: boolean
+  /** Scripted confirm answers for tests, consumed in order before the refusal logic. */
+  confirmAnswers?: boolean[]
   stdout?: Writer
   stderr?: Writer
 }
@@ -39,6 +41,7 @@ export function createUi(opts: UiOptions): Ui {
   const interactive =
     opts.interactive ?? (process.stdin.isTTY === true && process.stdout.isTTY === true && !ci.isCI)
   const colors = !opts.json && opts.stdout === undefined && process.stdout.isTTY === true
+  const scripted = opts.confirmAnswers === undefined ? undefined : [...opts.confirmAnswers]
 
   return {
     json: opts.json,
@@ -54,6 +57,7 @@ export function createUi(opts: UiOptions): Ui {
     },
     async confirm(question, confirmOpts) {
       if (opts.yes) return { ok: true, data: true }
+      if (scripted !== undefined && scripted.length > 0) return { ok: true, data: scripted.shift()! }
       if (opts.json || !interactive) {
         if (confirmOpts?.optional === true) return { ok: true, data: false }
         return {

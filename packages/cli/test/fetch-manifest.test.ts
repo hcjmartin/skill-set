@@ -75,4 +75,24 @@ describe('fetchManifest', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.message).toContain('MiB manifest cap')
   })
+
+  it('fails a redirect that crosses to an unrecognised host, naming only the host', async () => {
+    stub(() => redirect('https://evil.test/payload?MARKER-REDIRECT-INJ'))
+    const result = await fetchManifest('https://skill-set.md/x.skill-set.json')
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      // The host is named (hosts are not remote content); the attacker-controlled path/query is not.
+      expect(result.error.message).toContain('evil.test')
+      expect(result.error.message).not.toContain('MARKER-REDIRECT-INJ')
+      expect(result.error.message).not.toContain('payload')
+    }
+  })
+
+  it('allows a redirect between two allowlisted hosts', async () => {
+    const to = 'https://skill-sets.md/x.skill-set.json'
+    stub((url) => (url === to ? new Response('{"name":"x"}') : redirect(to)))
+    const result = await fetchManifest('https://skill-set.md/x.skill-set.json')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data).toBe('{"name":"x"}')
+  })
 })

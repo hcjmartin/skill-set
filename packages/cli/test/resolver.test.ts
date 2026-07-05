@@ -17,18 +17,18 @@ const TABLE: Array<{
     command: `npx -y skills@${SKILLS_PIN} add hcjmartin/skills-repo --skill skill-creator --yes`,
   },
   {
-    locator: 'vercel-labs/agent-skills@web-design-guidelines#v2.1.0',
-    source: 'vercel-labs/agent-skills',
+    locator: 'vercel-labs/skills@web-design-guidelines#v2.1.0',
+    source: 'vercel-labs/skills',
     skill: 'web-design-guidelines',
     ref: 'v2.1.0',
-    command: `npx -y skills@${SKILLS_PIN} add vercel-labs/agent-skills#v2.1.0 --skill web-design-guidelines --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add vercel-labs/skills#v2.1.0 --skill web-design-guidelines --yes`,
   },
   {
-    locator: 'https://gitlab.com/acme/agent-skills@review-code#8f7e6d5',
-    source: 'https://gitlab.com/acme/agent-skills',
+    locator: 'https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5',
+    source: 'https://github.com/hcjmartin/agent-skills',
     skill: 'review-code',
     ref: '8f7e6d5',
-    command: `npx -y skills@${SKILLS_PIN} add https://gitlab.com/acme/agent-skills#8f7e6d5 --skill review-code --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add https://github.com/hcjmartin/agent-skills#8f7e6d5 --skill review-code --yes`,
   },
   {
     locator: 'https://flocker.md/skills@research-notes',
@@ -37,16 +37,16 @@ const TABLE: Array<{
     command: `npx -y skills@${SKILLS_PIN} add https://flocker.md/skills --skill research-notes --yes`,
   },
   {
-    locator: 'git@github.com:acme/skills-repo@deploy-helper',
-    source: 'git@github.com:acme/skills-repo',
+    locator: 'git@github.com:hcjmartin/skills-repo@deploy-helper',
+    source: 'git@github.com:hcjmartin/skills-repo',
     skill: 'deploy-helper',
-    command: `npx -y skills@${SKILLS_PIN} add git@github.com:acme/skills-repo --skill deploy-helper --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add git@github.com:hcjmartin/skills-repo --skill deploy-helper --yes`,
   },
   {
     // The git@ user-info @ is not a skill separator: what follows is not a valid skill name.
-    locator: 'git@github.com:acme/skills-repo',
-    source: 'git@github.com:acme/skills-repo',
-    command: `npx -y skills@${SKILLS_PIN} add git@github.com:acme/skills-repo --yes`,
+    locator: 'git@github.com:hcjmartin/skills-repo',
+    source: 'git@github.com:hcjmartin/skills-repo',
+    command: `npx -y skills@${SKILLS_PIN} add git@github.com:hcjmartin/skills-repo --yes`,
   },
   {
     locator: './vendor/skills@my-skill',

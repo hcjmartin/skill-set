@@ -12,6 +12,26 @@ export const ADD_USAGE = 'skill-set add <url|path>'
 const MAX_REDIRECTS = 5
 const MAX_BYTES = 1024 * 1024
 
+/**
+ * Hosts that serve skill-set manifests without a pre-fetch warning. Any other host prompts
+ * for confirmation before `add` reaches out (an agent may be running unattended). Amend here.
+ */
+export const ALLOWED_HOSTS: readonly string[] = ['skill-set.md', 'skill-sets.md']
+
+function isAllowedHost(host: string): boolean {
+  return ALLOWED_HOSTS.includes(host)
+}
+
+/** Host of an https URL, or undefined for non-https / unparseable sources (local paths). */
+function httpsHost(source: string): string | undefined {
+  if (!/^https:\/\//i.test(source)) return undefined
+  try {
+    return new URL(source).host
+  } catch {
+    return undefined
+  }
+}
+
 export async function cmdAdd(args: string[], ctx: CommandContext): Promise<CommandResult> {
   const split = splitFlags(args, [], ADD_USAGE)
   if (!split.ok) return split
@@ -19,6 +39,18 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   if (source === undefined || extra.length > 0) return usageError('add takes exactly one manifest URL or path', ADD_USAGE)
 
   ctx.ui.out(`Adding skill-set from ${source}...`)
+
+  // Unrecognised hosts are confirmed before any bytes are fetched; a declined or
+  // unanswerable prompt aborts with nothing fetched.
+  const host = httpsHost(source)
+  if (host !== undefined && !isAllowedHost(host)) {
+    const proceed = await ctx.ui.confirm(`${JSON.stringify(host)} is not a recognised skill-set host. Fetch from it anyway?`)
+    if (!proceed.ok) return proceed
+    if (!proceed.data) {
+      ctx.ui.out('Aborted — nothing fetched.')
+      return { ok: true, data: { added: false } }
+    }
+  }
 
   const text = await readManifestSource(source, ctx)
   if (!text.ok) return text
@@ -77,7 +109,9 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const lock = loadLockIfPresent(ctx.cwd, name)
   if (!lock.ok) return lock
   writeSetPage(ctx.cwd, manifest.data, lock.data)
-  const index = writeIndex(ctx.cwd)
+  // Only a fetched HTTPS origin is recorded; sets added from a local path carry no source.
+  const origin = /^https:\/\//i.test(source) ? { [name]: source } : {}
+  const index = writeIndex(ctx.cwd, origin)
   if (!index.ok) return index
 
   return { ok: true, data: { name, added: true, install: install.data } }
@@ -95,6 +129,9 @@ async function readManifestSource(source: string, ctx: CommandContext): Promise<
 }
 
 export async function fetchManifest(url: string): Promise<Result<string>> {
+  // The initial host was already accepted by the command (allowlisted or confirmed); the
+  // redirect follower keeps requests on that host or an allowlisted one, never a new host.
+  const initialHost = httpsHost(url)
   let current = url
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     let response: Response
@@ -107,7 +144,11 @@ export async function fetchManifest(url: string): Promise<Result<string>> {
       const location = response.headers.get('location')
       if (location === null) return fetchFail(url, `redirect (${response.status}) without a location header`)
       current = new URL(location, current).toString()
-      if (!current.startsWith('https://')) return fetchFail(url, `redirected to non-HTTPS ${current}`)
+      if (!current.startsWith('https://')) return fetchFail(url, 'redirected to a non-HTTPS location')
+      const nextHost = new URL(current).host
+      if (!isAllowedHost(nextHost) && nextHost !== initialHost) {
+        return fetchFail(url, `redirected to unrecognised host ${nextHost}`, 'Redirects must stay on the original or a recognised skill-set host.')
+      }
       continue
     }
     if (!response.ok) return fetchFail(url, `GET returned ${response.status}`)

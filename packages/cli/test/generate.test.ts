@@ -61,17 +61,21 @@ const GOLDEN = [
   '',
   '## Installation',
   '',
+  'This set is defined by `frontend.skill-set.json`. Install the referenced skills into a project with:',
+  '',
   '```',
   'npx @skill-set/cli install frontend',
   '```',
   '',
   '## Usage',
   '',
-  'Members install as ordinary skills under `.agents/skills/<skill>/`; once installed, agents discover and invoke them like any other skill.',
+  'Skills install in `.agents/skills/<skill>/`',
   '',
   '## Provenance',
   '',
-  `Locked at set version 1.0.0. Every member's resolved content is recorded in \`frontend.skill-set.lock.json\` (setHash \`${lock.setHash}\`).`,
+  'Locked at set version 1.0.0.',
+  "Every member's resolved content is recorded in `frontend.skill-set.lock.json`.",
+  `Skill-set content hash: \`${lock.setHash}\`.`,
   '',
 ].join('\n')
 
@@ -178,6 +182,14 @@ describe('generateIndex', () => {
   it('produces the documented index byte-for-byte, sets and members byte-sorted', () => {
     expect(generateIndex([frontend, api])).toBe(EXPECTED)
     expect(generateIndex([api, frontend])).toBe(EXPECTED)
+  })
+
+  it('records a per-set source after its skills, only for named sets', () => {
+    const out = generateIndex([frontend, api], { frontend: 'https://skill-set.md/frontend.skill-set.json' })
+    expect(out).toContain('        "vercel-labs/agent-skills@web-design-guidelines#v2.1.0"\n      ],\n      "source": "https://skill-set.md/frontend.skill-set.json"')
+    // A set with no entry in `sources` carries no `source` key at all.
+    const apiEntry = (JSON.parse(out) as { sets: Record<string, { source?: string }> }).sets.api!
+    expect('source' in apiEntry).toBe(false)
   })
 
   it('rejects two sets declaring the same name', () => {

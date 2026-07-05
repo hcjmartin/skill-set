@@ -34,7 +34,7 @@ describe('parseManifest — spec fixtures', () => {
 })
 
 describe('parseManifest — §2 rules', () => {
-  const base = { name: 'demo', version: '1.0.0', skills: ['acme/skills@review-code'] }
+  const base = { name: 'demo', version: '1.0.0', skills: ['hcjmartin/skills@review-code'] }
 
   it('reports duplicate members with a dedicated code', () => {
     const result = parseManifest(

@@ -17,8 +17,8 @@ One file per set, named `<name>.skill-set.json`, validating against [`skill-set.
   "author": { "name": "Harry Martin", "url": "https://github.com/hcjmartin" },
   "skills": [
     "hcjmartin/skills-repo@skill-creator",
-    "vercel-labs/agent-skills@web-design-guidelines#v2.1.0",
-    "https://gitlab.com/acme/agent-skills@review-code#8f7e6d5",
+    "vercel-labs/skills@web-design-guidelines#v2.1.0",
+    "https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5",
     "https://flocker.md/skills@research-notes"
   ]
 }

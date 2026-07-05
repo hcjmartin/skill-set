@@ -9,7 +9,7 @@ import {
   SKILL_SET_MD_FILENAME,
   type MemberDetails,
 } from './generate.ts'
-import { compareUtf8 } from './json.ts'
+import { compareUtf8, parseStrictJson } from './json.ts'
 import { LOCK_SUFFIX, parseSetLock, type SetLock } from './lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from './manifest.ts'
 import { locateMember, SKILLS_DIR } from './resolver.ts'
@@ -90,12 +90,38 @@ export function writeSetPage(cwd: string, manifest: Manifest, lock: SetLock | un
   return `${SETS_DIR}/${manifest.name}/${SKILL_SET_MD_FILENAME}`
 }
 
-/** Regenerates the project-wide index over every set. */
-export function writeIndex(cwd: string): Result<string> {
+/**
+ * Regenerates the project-wide index over every set. Existing per-set `source` values are read
+ * from the current index and carried forward; `newSources` records origins for sets added this
+ * pass. Sources for sets that no longer exist drop naturally, since only present sets are written.
+ */
+export function writeIndex(cwd: string, newSources: Record<string, string> = {}): Result<string> {
   const manifests = loadAllManifests(cwd)
   if (!manifests.ok) return manifests
-  writeFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), generateIndex(manifests.data))
+  const sources = { ...readIndexSources(cwd), ...newSources }
+  writeFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), generateIndex(manifests.data, sources))
   return { ok: true, data: `${SETS_DIR}/${INDEX_FILENAME}` }
+}
+
+/** The origin URL recorded for a set in the index, if any — informational provenance only. */
+export function readSetSource(cwd: string, name: string): string | undefined {
+  return readIndexSources(cwd)[name]
+}
+
+/** Per-set `source` values from the existing index; empty when it is missing or unparseable. */
+function readIndexSources(cwd: string): Record<string, string> {
+  const indexPath = join(cwd, SETS_DIR, INDEX_FILENAME)
+  if (!existsSync(indexPath)) return {}
+  const parsed = parseStrictJson(readFileSync(indexPath, 'utf8'))
+  if (!parsed.ok) return {}
+  const sets = (parsed.data as { sets?: unknown }).sets
+  if (typeof sets !== 'object' || sets === null) return {}
+  const sources: Record<string, string> = {}
+  for (const [name, entry] of Object.entries(sets as Record<string, unknown>)) {
+    const source = (entry as { source?: unknown }).source
+    if (typeof source === 'string') sources[name] = source
+  }
+  return sources
 }
 
 /**

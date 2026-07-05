@@ -74,13 +74,15 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
     '',
     '## Installation',
     '',
+    `This set is defined by \`${manifest.name}${MANIFEST_SUFFIX}\`. Install the referenced skills into a project with:`,
+    '',
     '```',
     `npx @skill-set/cli install ${manifest.name}`,
     '```',
     '',
     '## Usage',
     '',
-    'Members install as ordinary skills under `.agents/skills/<skill>/`; once installed, agents discover and invoke them like any other skill.',
+    'Skills install in `.agents/skills/<skill>/`',
     '',
     '## Provenance',
     '',
@@ -91,7 +93,9 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
     )
   } else {
     lines.push(
-      `Locked at set version ${lock.setVersion}. Every member's resolved content is recorded in \`${lock.name}${LOCK_SUFFIX}\` (setHash \`${lock.setHash}\`).`,
+      `Locked at set version ${lock.setVersion}.`,
+      `Every member's resolved content is recorded in \`${lock.name}${LOCK_SUFFIX}\`.`,
+      `Skill-set content hash: \`${lock.setHash}\`.`,
     )
     if (lock.setVersion !== manifest.version) {
       lines.push(
@@ -113,8 +117,10 @@ function cell(text: string): string {
 /**
  * Generates the skill-sets.json index over every set in a project. Deterministic (spec §7):
  * set names and each set's members serialize in UTF-8-byte-order regardless of input order.
+ * `sources` supplies an informational origin URL per set name, carried into that set's entry
+ * when present; entries for sets not in `sources` carry no `source` key.
  */
-export function generateIndex(manifests: Manifest[]): string {
+export function generateIndex(manifests: Manifest[], sources: Record<string, string> = {}): string {
   const byName = new Map<string, Manifest>()
   for (const manifest of manifests) {
     if (byName.has(manifest.name)) {
@@ -130,10 +136,12 @@ export function generateIndex(manifests: Manifest[]): string {
   const sets: Record<string, unknown> = {}
   for (const name of [...byName.keys()].sort(compareUtf8)) {
     const manifest = byName.get(name)!
+    const source = sources[name]
     sets[name] = {
       version: manifest.version,
       ...(manifest.description !== undefined ? { description: manifest.description } : {}),
       skills: [...manifest.skills].sort(compareUtf8),
+      ...(source !== undefined ? { source } : {}),
     }
   }
   return `${JSON.stringify({ version: INDEX_VERSION, sets }, null, 2)}\n`

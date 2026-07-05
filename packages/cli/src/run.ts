@@ -28,7 +28,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   lock: { usage: 'lock <set>', describe: "Record each member's installed content in a set-lock", handler: cmdLock },
   verify: { usage: 'verify <set> [--frozen]', describe: 'Check installed members against the set (frozen: byte-exact)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
-  remove: { usage: 'remove <set> [--skills]', describe: 'Remove a set definition (optionally unshared member folders)', handler: cmdRemove },
+  remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
 }
 
 const HELP = `skill-set — define, share, and install named, versioned sets of agent skills.
@@ -63,6 +63,7 @@ export interface RunOverrides {
   fetcher?: (url: string) => Promise<Result<string>>
   ci?: boolean
   interactive?: boolean
+  confirmAnswers?: boolean[]
   stdout?: Writer
   stderr?: Writer
 }
@@ -97,7 +98,7 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
   }
   const [verb, ...args] = rest
 
-  const ui = createUi({ json, yes, interactive: overrides.interactive, stdout, stderr })
+  const ui = createUi({ json, yes, interactive: overrides.interactive, confirmAnswers: overrides.confirmAnswers, stdout, stderr })
   const ctx: CommandContext = {
     cwd: overrides.cwd ?? process.cwd(),
     ui,

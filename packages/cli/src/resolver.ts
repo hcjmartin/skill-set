@@ -70,12 +70,91 @@ export function buildAddInvocation(locator: string, opts?: { global?: boolean })
   return { command: 'npx', args, env }
 }
 
+/** Builds the pinned upstream check invocation: reports member staleness, changes nothing. */
+export function buildCheckInvocation(): SkillsInvocation {
+  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'check'])
+}
+
+/** Builds the pinned upstream update invocation for installed skills (project scope, prompt-suppressed). */
+export function buildUpdateInvocation(skills: readonly string[]): SkillsInvocation {
+  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'update', ...skills, '-p', '--yes'])
+}
+
+/** Builds the pinned upstream remove invocation (project scope, prompt-suppressed). */
+export function buildRemoveInvocation(skills: readonly string[]): SkillsInvocation {
+  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'remove', ...skills, '--yes'])
+}
+
+function withTelemetryOptOut(args: string[]): SkillsInvocation {
+  const env: Record<string, string> = {}
+  if (buildConfig.suppressUpstreamTelemetry) env.DISABLE_TELEMETRY = '1'
+  return { command: 'npx', args, env }
+}
+
 export interface ResolvedMember {
   skill: string
   /** The spec §6 content hash — what a set-lock records. */
   computedHash: string
   sourceType?: string
   ref?: string
+}
+
+/**
+ * Finds a member's already-installed skill without spawning anything: a named locator maps
+ * directly; an unnamed one must match its source byte-for-byte (and ref when pinned) against
+ * exactly one skills-lock.json entry. Used by commands that must never install.
+ */
+export function locateMember(locator: string, opts: { cwd: string }): Result<ResolvedMember> {
+  if (locator.trim() === '') {
+    return fail(ErrorCodes.RESOLVE_FAILED, "A member skill locator must be a non-empty string")
+  }
+  const lock = readLockSkills(opts.cwd)
+  if (!lock.ok) return lock
+
+  const parsed = parseLocator(locator)
+  let skillName: string
+  if (parsed.skill !== undefined) {
+    skillName = parsed.skill
+  } else {
+    const candidates = Object.keys(lock.data).filter((k) => {
+      const e = lock.data[k]!
+      return e.source === parsed.source && (parsed.ref === undefined || e.ref === parsed.ref)
+    })
+    if (candidates.length > 1) {
+      return fail(
+        ErrorCodes.RESOLVE_AMBIGUOUS,
+        `Member ${JSON.stringify(locator)} matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set skill must resolve to exactly one skill`,
+        { hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${parsed.source}@${candidates[0]!}`)}.`, data: { locator, candidates } },
+      )
+    }
+    if (candidates.length === 0) {
+      return fail(
+        ErrorCodes.MEMBER_NOT_INSTALLED,
+        `Member ${JSON.stringify(locator)} could not be matched to an installed skill in ${SKILLS_LOCK_FILE}`,
+        { hint: 'Install the set first ("skill-set install <set>"), or name the skill in the member, e.g. "<source>@<skill-name>".', data: { locator } },
+      )
+    }
+    skillName = candidates[0]!
+  }
+
+  const folder = join(opts.cwd, SKILLS_DIR, skillName)
+  if (!existsSync(folder)) {
+    return fail(
+      ErrorCodes.MEMBER_NOT_INSTALLED,
+      `Member ${JSON.stringify(locator)} is not installed (no folder at ${SKILLS_DIR}/${skillName})`,
+      { hint: 'Install the set first: "skill-set install <set>".', data: { locator, skillName } },
+    )
+  }
+  const entry = lock.data[skillName]
+  return {
+    ok: true,
+    data: {
+      skill: skillName,
+      computedHash: specFolderHash(folder),
+      ...(entry?.sourceType === undefined ? {} : { sourceType: entry.sourceType }),
+      ...(entry?.ref === undefined ? {} : { ref: entry.ref }),
+    },
+  }
 }
 
 export type CommandRunner = (
@@ -95,26 +174,38 @@ export interface Resolver {
  */
 export async function resolveMember(
   locator: string,
-  opts: { cwd: string; runner?: CommandRunner },
+  opts: { cwd: string; runner?: CommandRunner; extraArgs?: readonly string[]; capture?: boolean },
 ): Promise<Result<ResolvedMember>> {
   if (locator.trim() === '') {
-    return fail(ErrorCodes.RESOLVE_FAILED, 'A member locator must be a non-empty string (spec §1)')
+    return fail(ErrorCodes.RESOLVE_FAILED, 'A member skill locator must be a non-empty string')
   }
 
   const before = readLockSkills(opts.cwd)
   if (!before.ok) return before
 
   const invocation = buildAddInvocation(locator)
-  const run = await (opts.runner ?? runCommand)(invocation.command, invocation.args, {
+  const args =
+    opts.extraArgs === undefined || opts.extraArgs.length === 0
+      ? invocation.args
+      : [...invocation.args, ...opts.extraArgs]
+  const run = await (opts.runner ?? runCommand)(invocation.command, args, {
     cwd: opts.cwd,
     env: invocation.env,
+    capture: opts.capture,
   })
   if (!run.ok) return run
   if (run.data.exitCode !== 0) {
     return fail(
       ErrorCodes.RESOLVE_FAILED,
       `Resolving ${JSON.stringify(locator)} failed: the skills CLI exited with code ${run.data.exitCode}`,
-      { hint: 'See the skills output above for the cause.', data: { locator, exitCode: run.data.exitCode } },
+      {
+        hint: opts.capture === true ? 'The captured skills output is in data.stderr.' : 'See the skills output above for the cause.',
+        data: {
+          locator,
+          exitCode: run.data.exitCode,
+          ...(opts.capture === true ? { stderr: run.data.stderr.slice(-2000) } : {}),
+        },
+      },
     )
   }
 
@@ -185,7 +276,7 @@ function discoveryFailure(locator: string, source: string, candidates: string[])
   if (candidates.length > 0) {
     return fail(
       ErrorCodes.RESOLVE_AMBIGUOUS,
-      `Member ${JSON.stringify(locator)} was installed, but matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set member must resolve to exactly one skill (spec §1).`,
+      `Member ${JSON.stringify(locator)} was installed, but matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set member must resolve to exactly one skill.`,
       {
         hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${source}@${candidates[0]!}`)}.`,
         data: { locator, source, candidates },

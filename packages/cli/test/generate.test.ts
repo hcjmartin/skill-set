@@ -12,7 +12,7 @@ const frontend: Manifest = {
   version: '1.0.0',
   description: 'Skills for frontend work.',
   skills: [
-    'vercel-labs/agent-skills@web-design-guidelines#v2.1.0',
+    'vercel-labs/skills@web-design-guidelines#v2.1.0',
     'hcjmartin/skills-repo@skill-creator',
   ],
 }
@@ -24,7 +24,7 @@ const lock = createSetLock('frontend', '1.0.0', {
     sourceType: 'github',
     ref: 'a1b2c3d',
   },
-  'vercel-labs/agent-skills@web-design-guidelines#v2.1.0': {
+  'vercel-labs/skills@web-design-guidelines#v2.1.0': {
     skill: 'web-design-guidelines',
     computedHash: HASH_B,
   },
@@ -41,37 +41,39 @@ const members = {
 const GOLDEN = [
   '---',
   'name: "frontend"',
-  'description: "Skills for frontend work. A set of 2 agent skills. Use when installing, verifying, or updating the \\"frontend\\" skill set."',
+  'description: "Skills for frontend work. A set of 2 agent skills. Use when reviewing, installing, verifying, or updating the \\"frontend\\" skill set."',
   '---',
   '',
   '# frontend',
   '',
-  '## Overview',
+  '## Description',
   '',
   'Skills for frontend work.',
   '',
-  'This set bundles 2 skills. It is generated from `frontend.skill-set.json`. Updates should be made to the manifest, not this file.',
-  '',
-  '## Skills in this set',
+  '## Skills in this set (2)',
   '',
   '| Skill | Description | Source |',
   '| --- | --- | --- |',
   '| `skill-creator` | Guides creation of agent skills. Use when authoring a skill. | `hcjmartin/skills-repo@skill-creator` (locked to `a1b2c3d`) |',
-  '| `web-design-guidelines` | (none recorded) | `vercel-labs/agent-skills@web-design-guidelines#v2.1.0` |',
+  '| `web-design-guidelines` | (none recorded) | `vercel-labs/skills@web-design-guidelines#v2.1.0` |',
   '',
-  '## Installation',
+  '## Install',
+  '',
+  'This set is defined by `frontend.skill-set.json`. Install the referenced skills into a project with:',
   '',
   '```',
   'npx @skill-set/cli install frontend',
   '```',
   '',
-  '## Usage',
+  '## Updates',
   '',
-  'Members install as ordinary skills under `.agents/skills/<skill>/`; once installed, agents discover and invoke them like any other skill.',
+  'This set bundles 2 skills, as specified in `frontend.skill-set.json`. Changes should be made to the manifest, not this file.',
   '',
   '## Provenance',
   '',
-  `Locked at set version 1.0.0. Every member's resolved content is recorded in \`frontend.skill-set.lock.json\` (setHash \`${lock.setHash}\`).`,
+  'Locked at set version 1.0.0.',
+  "Every member's resolved content is recorded in `frontend.skill-set.lock.json`.",
+  `Skill-set content hash: \`${lock.setHash}\`.`,
   '',
 ].join('\n')
 
@@ -167,7 +169,7 @@ describe('generateIndex', () => {
     '      "description": "Skills for frontend work.",',
     '      "skills": [',
     '        "hcjmartin/skills-repo@skill-creator",',
-    '        "vercel-labs/agent-skills@web-design-guidelines#v2.1.0"',
+    '        "vercel-labs/skills@web-design-guidelines#v2.1.0"',
     '      ]',
     '    }',
     '  }',
@@ -178,6 +180,14 @@ describe('generateIndex', () => {
   it('produces the documented index byte-for-byte, sets and members byte-sorted', () => {
     expect(generateIndex([frontend, api])).toBe(EXPECTED)
     expect(generateIndex([api, frontend])).toBe(EXPECTED)
+  })
+
+  it('records a per-set source after its skills, only for named sets', () => {
+    const out = generateIndex([frontend, api], { frontend: 'https://skill-set.md/frontend.skill-set.json' })
+    expect(out).toContain('        "vercel-labs/skills@web-design-guidelines#v2.1.0"\n      ],\n      "source": "https://skill-set.md/frontend.skill-set.json"')
+    // A set with no entry in `sources` carries no `source` key at all.
+    const apiEntry = (JSON.parse(out) as { sets: Record<string, { source?: string }> }).sets.api!
+    expect('source' in apiEntry).toBe(false)
   })
 
   it('rejects two sets declaring the same name', () => {

@@ -42,19 +42,21 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
 
   const n = manifest.skills.length
   const plural = n === 1 ? 'skill' : 'skills'
-  const trigger = `A set of ${n} agent ${plural}. Use when installing, verifying, or updating the "${manifest.name}" skill set.`
+  const trigger = `A set of ${n} agent ${plural}. Use when reviewing, installing, verifying, or updating the "${manifest.name}" skill set.`
   const description = manifest.description === undefined ? trigger : `${manifest.description} ${trigger}`
 
   // Every scalar is JSON-quoted: valid set names like "no" or "123" would otherwise
   // parse as YAML boolean/int, and JSON strings are valid YAML double-quoted scalars.
   const lines: string[] = ['---', `name: ${JSON.stringify(manifest.name)}`, `description: ${JSON.stringify(description)}`]
   if (opts.license !== undefined) lines.push(`license: ${JSON.stringify(opts.license)}`)
-  lines.push('---', '', `# ${manifest.name}`, '', '## Overview', '')
-  if (manifest.description !== undefined) lines.push(manifest.description, '')
+  lines.push('---', '', `# ${manifest.name}`, '')
+
+  if (manifest.description !== undefined) {
+    lines.push('## Description', '', manifest.description, '')
+  }
+
   lines.push(
-    `This set bundles ${n} ${plural}. It is generated from \`${manifest.name}${MANIFEST_SUFFIX}\`. Updates should be made to the manifest, not this file.`,
-    '',
-    '## Skills in this set',
+    `## Skills in this set (${n})`,
     '',
     '| Skill | Description | Source |',
     '| --- | --- | --- |',
@@ -72,26 +74,37 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
 
   lines.push(
     '',
-    '## Installation',
+    '## Install',
+    '',
+    `This set is defined by \`${manifest.name}${MANIFEST_SUFFIX}\`. Install the referenced skills into a project with:`,
     '',
     '```',
     `npx @skill-set/cli install ${manifest.name}`,
     '```',
     '',
-    '## Usage',
+  )
+
+  lines.push(
+    '## Updates',
     '',
-    'Members install as ordinary skills under `.agents/skills/<skill>/`; once installed, agents discover and invoke them like any other skill.',
+    `This set bundles ${n} ${plural}, as specified in \`${manifest.name}${MANIFEST_SUFFIX}\`. Changes should be made to the manifest, not this file.`,
     '',
+  )
+
+  lines.push(
     '## Provenance',
     '',
   )
+
   if (lock === undefined) {
     lines.push(
       `No lock is recorded for this set. Capture the resolved content of every member with \`npx @skill-set/cli lock ${manifest.name}\`.`,
     )
   } else {
     lines.push(
-      `Locked at set version ${lock.setVersion}. Every member's resolved content is recorded in \`${lock.name}${LOCK_SUFFIX}\` (setHash \`${lock.setHash}\`).`,
+      `Locked at set version ${lock.setVersion}.`,
+      `Every member's resolved content is recorded in \`${lock.name}${LOCK_SUFFIX}\`.`,
+      `Skill-set content hash: \`${lock.setHash}\`.`,
     )
     if (lock.setVersion !== manifest.version) {
       lines.push(
@@ -113,8 +126,10 @@ function cell(text: string): string {
 /**
  * Generates the skill-sets.json index over every set in a project. Deterministic (spec §7):
  * set names and each set's members serialize in UTF-8-byte-order regardless of input order.
+ * `sources` supplies an informational origin URL per set name, carried into that set's entry
+ * when present; entries for sets not in `sources` carry no `source` key.
  */
-export function generateIndex(manifests: Manifest[]): string {
+export function generateIndex(manifests: Manifest[], sources: Record<string, string> = {}): string {
   const byName = new Map<string, Manifest>()
   for (const manifest of manifests) {
     if (byName.has(manifest.name)) {
@@ -130,10 +145,12 @@ export function generateIndex(manifests: Manifest[]): string {
   const sets: Record<string, unknown> = {}
   for (const name of [...byName.keys()].sort(compareUtf8)) {
     const manifest = byName.get(name)!
+    const source = sources[name]
     sets[name] = {
       version: manifest.version,
       ...(manifest.description !== undefined ? { description: manifest.description } : {}),
       skills: [...manifest.skills].sort(compareUtf8),
+      ...(source !== undefined ? { source } : {}),
     }
   }
   return `${JSON.stringify({ version: INDEX_VERSION, sets }, null, 2)}\n`

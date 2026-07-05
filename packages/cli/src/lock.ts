@@ -4,6 +4,7 @@ import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { setHash } from './hash.ts'
 import { compareUtf8, parseStrictJson } from './json.ts'
 import { NAME_PATTERN, SEMVER_PATTERN } from './manifest.ts'
+import { structuralIssues } from './zod-issues.ts'
 
 export const LOCK_SUFFIX = '.skill-set.lock.json'
 export const SET_LOCK_VERSION = 1
@@ -50,10 +51,10 @@ export function parseSetLock(text: string, opts?: { filename?: string }): Result
 
   const parsed = setLockSchema.safeParse(json.data)
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
-    return fail(ErrorCodes.INVALID_LOCK, `${context} is not a valid set-lock:\n  - ${issues.join('\n  - ')}`, {
+    const issues = structuralIssues(parsed.error.issues)
+    return fail(ErrorCodes.INVALID_LOCK, `${context} is not a valid set-lock:\n  - ${issues.lines.join('\n  - ')}`, {
       hint: 'Regenerate with "skill-set lock".',
-      data: parsed.error.issues,
+      data: issues.data,
     })
   }
   const lock = parsed.data

@@ -1,42 +1,77 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { run, VERSION } from '../src/run.ts'
+import type { Writer } from '../src/ui.ts'
 
-let log: ReturnType<typeof vi.spyOn>
-let error: ReturnType<typeof vi.spyOn>
+function writers(): { stdout: Writer; stderr: Writer; text(): { out: string; err: string } } {
+  let out = ''
+  let err = ''
+  return {
+    stdout: { write: (s: string) => (out += s) },
+    stderr: { write: (s: string) => (err += s) },
+    text: () => ({ out, err }),
+  }
+}
 
-beforeEach(() => {
-  log = vi.spyOn(console, 'log').mockImplementation(() => {})
-  error = vi.spyOn(console, 'error').mockImplementation(() => {})
-})
+async function cli(argv: string[]): Promise<{ code: number; out: string; err: string }> {
+  const w = writers()
+  const code = await run(argv, { stdout: w.stdout, stderr: w.stderr, interactive: false, ci: false })
+  return { code, ...w.text() }
+}
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
-
-describe('run', () => {
-  it('prints help and exits 0 with --help', () => {
-    expect(run(['--help'])).toBe(0)
-    expect(log).toHaveBeenCalledOnce()
+describe('run — dispatch and meta-flags', () => {
+  it('prints help and exits 0 with --help', async () => {
+    const { code, out } = await cli(['--help'])
+    expect(code).toBe(0)
+    expect(out).toContain('Usage: skill-set <command>')
+    // The passthrough hint names the real upstream agent-selection flag.
+    expect(out).toContain('skill-set install demo -- --agent claude-code cursor')
+    expect(out).toContain('Exit codes: 0 ok · 1 error · 2 usage · 3 drift · 4 conflict')
   })
 
-  it('prints help and exits 0 with no args', () => {
-    expect(run([])).toBe(0)
-    expect(log).toHaveBeenCalledOnce()
+  it('prints help and exits 0 with no args', async () => {
+    const { code, out } = await cli([])
+    expect(code).toBe(0)
+    expect(out).toContain('Commands:')
+    expect(out).toContain('--dry-run')
   })
 
-  it('intercepts --help even when a command precedes it', () => {
-    expect(run(['update', '--help'])).toBe(0)
-    expect(error).not.toHaveBeenCalled()
+  it('intercepts --help before any command dispatch', async () => {
+    // The upstream foot-gun this design forbids: `update --help` must never execute.
+    const { code, out, err } = await cli(['update', '--help'])
+    expect(code).toBe(0)
+    expect(out).toContain('Usage: skill-set <command>')
+    expect(err).toBe('')
   })
 
-  it('prints version and exits 0 with --version', () => {
-    expect(run(['--version'])).toBe(0)
-    expect(log).toHaveBeenCalledWith(VERSION)
+  it('reports both our version and the upstream pin with --version', async () => {
+    const { code, out } = await cli(['--version'])
+    expect(code).toBe(0)
+    expect(out).toContain(`skill-set/${VERSION}`)
+    expect(out).toContain('skills@1.5')
   })
 
-  it('exits 1 for unimplemented commands', () => {
-    expect(run(['install', 'frontend'])).toBe(1)
-    expect(error).toHaveBeenCalledOnce()
+  it('a --help after the passthrough sentinel is not a meta-flag', async () => {
+    // `-- --help` belongs to the wrapped CLI; the command itself still dispatches (usage error here).
+    const { code } = await cli(['nonsense', '--', '--help'])
+    expect(code).toBe(2)
+  })
+
+  it('exits 2 for an unknown command, with the help hint on stderr', async () => {
+    const { code, err } = await cli(['banana'])
+    expect(code).toBe(2)
+    expect(err).toContain('Unknown command "banana"')
+    expect(err).toContain('skill-set --help')
+  })
+
+  it('--json wraps even a usage error in a single parseable envelope', async () => {
+    const w = writers()
+    const code = await run(['banana', '--json'], { stdout: w.stdout, stderr: w.stderr, interactive: false })
+    expect(code).toBe(2)
+    const lines = w.text().out.split('\n').filter((l) => l !== '')
+    expect(lines).toHaveLength(1)
+    const envelope = JSON.parse(lines[0]!) as { ok: boolean; error: { code: string } }
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error.code).toBe('ERR_SKILLSET_USAGE')
   })
 
   it('VERSION matches package.json', async () => {

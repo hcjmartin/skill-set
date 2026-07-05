@@ -6,6 +6,9 @@ import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import { parseManifest } from '../src/manifest.ts'
 
+// The spec example fixtures deliberately use inert, non-owned names (e.g. "acme-skills") as pure
+// name-pattern strings. Never copy them into tests that resolve or fetch — anything resolvable
+// must use an owned namespace (hcjmartin/*, skill-set.md, flocker.md).
 const specDir = join(import.meta.dirname, '../../../spec/draft')
 
 type Violation = { keyword: string; instancePath: string }

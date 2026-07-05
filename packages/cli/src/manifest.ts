@@ -4,6 +4,7 @@ import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { parseStrictJson } from './json.ts'
 
 export const MANIFEST_SUFFIX = '.skill-set.json'
+export const DRAFT_SCHEMA_URL = 'https://skill-set.md/schema/draft/skill-set.schema.json'
 export const NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 export const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/

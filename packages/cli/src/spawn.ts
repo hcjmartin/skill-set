@@ -16,7 +16,7 @@ export interface SpawnOptions {
   capture?: boolean
 }
 
-/** The single spawn site — every child process starts here . */
+/** The single spawn site — every child process starts here. */
 export async function runCommand(
   command: string,
   args: readonly string[],

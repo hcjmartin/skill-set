@@ -67,7 +67,7 @@ Installing a set resolves each member locator to an installed skill folder (cano
 
 ## 5. The set-lock — `<name>.skill-set.lock.json`
 
-An optional, generated lock records exactly which bytes each member resolved to. It validates against [`skill-set.lock.schema.json`](./skill-set.lock.schema.json), and the name↔filename rule (§2.2, with suffix `.skill-set.lock.json`) applies.
+An optional, generated lock records exactly which bytes each member resolved to. It validates against [`skill-set.lock.schema.json`](./skill-set.lock.schema.json), and the name↔filename rule (§2.2, with suffix `.skill-set.lock.json`) applies. The example below is illustrative — hashes truncated for readability; see [`examples/lock/valid/`](./examples/lock/valid/) for complete documents.
 
 ```json
 {

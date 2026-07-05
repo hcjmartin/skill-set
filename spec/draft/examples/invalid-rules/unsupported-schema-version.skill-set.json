@@ -1,0 +1,6 @@
+{
+  "$schema": "https://skill-set.md/schema/v99/skill-set.schema.json",
+  "name": "unsupported-schema-version",
+  "version": "1.0.0",
+  "skills": ["owner/repo@a"]
+}

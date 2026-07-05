@@ -1,0 +1,5 @@
+{
+  "name-mismatch.skill-set.json": { "code": "ERR_SKILLSET_NAME_MISMATCH" },
+  "duplicate-keys.skill-set.json": { "code": "ERR_SKILLSET_INVALID_JSON" },
+  "unsupported-schema-version.skill-set.json": { "code": "ERR_SKILLSET_SCHEMA_VERSION" }
+}

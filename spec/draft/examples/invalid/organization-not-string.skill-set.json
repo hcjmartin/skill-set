@@ -1,0 +1,6 @@
+{
+  "name": "organization-not-string",
+  "version": "1.0.0",
+  "author": { "name": "Harry Martin", "organization": 123 },
+  "skills": ["owner/repo@a"]
+}

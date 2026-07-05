@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "full",
+  "setVersion": "1.2.3-beta.1+build.5",
+  "setHash": "7f0d97b13de2f2f0ab5fd9aa1bd3683dfcf592d7f106dbe6964eb78f5daed038",
+  "skills": {
+    "owner/repo@alpha": {
+      "skill": "alpha",
+      "computedHash": "111111111111111111111111111111111111111111111111111111111111111a",
+      "sourceType": "github",
+      "ref": "v1.0.0"
+    },
+    "owner/repo@｡": {
+      "skill": "halfwidth",
+      "computedHash": "222222222222222222222222222222222222222222222222222222222222222b"
+    },
+    "owner/repo@𐀀": {
+      "skill": "astral",
+      "computedHash": "333333333333333333333333333333333333333333333333333333333333333c",
+      "sourceType": "git"
+    }
+  }
+}

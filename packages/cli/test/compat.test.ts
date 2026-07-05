@@ -6,7 +6,7 @@ import { compatFolderHash } from '../src/hash.ts'
 import { parseSkillsLock } from '../src/lock.ts'
 import { resolveMember } from '../src/resolver.ts'
 
-// The D12 guard: spawns the real pinned `npx skills`, so gated out of the hermetic suite.
+// The drift guard: spawns the real pinned `npx skills`, so gated out of the hermetic suite.
 // Uses a local source because byte-parity with the upstream lock is only defined for
 // disk-based installs — GitHub blob installs record a server-side snapshot hash instead.
 const RUN = process.env.RUN_COMPAT === '1'

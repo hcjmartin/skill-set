@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildConfig } from '../src/config.ts'
 import { buildAddInvocation, parseLocator, SKILLS_PIN } from '../src/resolver.ts'
 
-// One row per source kind the upstream resolver accepts (D13), plus grammar edges.
+// One row per source kind the upstream resolver accepts, plus grammar edges.
 const TABLE: Array<{
   locator: string
   source: string

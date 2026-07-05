@@ -34,9 +34,10 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
     const counted = referenceCount(ctx, name, manifest.data.skills)
     if (!counted.ok) return counted
     const { removable, kept } = counted.data
-    ctx.ui.out(`would remove: set ${JSON.stringify(name)} (definition, lock, and generated files)`)
+    ctx.ui.out(`would remove: set ${JSON.stringify(name)} (from ${source}) — definition, lock, and generated files`)
     if (removable.length > 0) {
-      ctx.ui.out(ctx.ui.style('dim', `would run: ${formatInvocation(buildRemoveInvocation(removable), ctx.passthrough)}`))
+      ctx.ui.out(`would offer to also remove its skills (${removable.join(', ')})`)
+      ctx.ui.out(ctx.ui.style('dim', `  would run on yes: ${formatInvocation(buildRemoveInvocation(removable), ctx.passthrough)}`))
     }
     for (const k of kept) ctx.ui.out(ctx.ui.style('dim', `  would keep ${k.skill ?? k.member}: ${k.reason}`))
     ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills removed`)

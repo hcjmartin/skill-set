@@ -5,6 +5,9 @@ import { ErrorCodes, SkillSetError } from '../src/errors.ts'
 import { setHash } from '../src/hash.ts'
 import { createSetLock, parseSetLock, parseSkillsLock, serializeSetLock } from '../src/lock.ts'
 
+// The spec lock fixtures deliberately use inert, non-owned names (e.g. "acme-skills") as pure
+// name-pattern strings. Never copy them into tests that resolve or fetch — anything resolvable
+// must use an owned namespace (hcjmartin/*, skill-set.md, flocker.md).
 const lockFixturePath = join(
   import.meta.dirname,
   '../../../spec/draft/examples/lock/valid/minimal.skill-set.lock.json',

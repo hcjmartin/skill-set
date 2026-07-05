@@ -12,7 +12,7 @@ const frontend: Manifest = {
   version: '1.0.0',
   description: 'Skills for frontend work.',
   skills: [
-    'vercel-labs/agent-skills@web-design-guidelines#v2.1.0',
+    'vercel-labs/skills@web-design-guidelines#v2.1.0',
     'hcjmartin/skills-repo@skill-creator',
   ],
 }
@@ -24,7 +24,7 @@ const lock = createSetLock('frontend', '1.0.0', {
     sourceType: 'github',
     ref: 'a1b2c3d',
   },
-  'vercel-labs/agent-skills@web-design-guidelines#v2.1.0': {
+  'vercel-labs/skills@web-design-guidelines#v2.1.0': {
     skill: 'web-design-guidelines',
     computedHash: HASH_B,
   },
@@ -57,7 +57,7 @@ const GOLDEN = [
   '| Skill | Description | Source |',
   '| --- | --- | --- |',
   '| `skill-creator` | Guides creation of agent skills. Use when authoring a skill. | `hcjmartin/skills-repo@skill-creator` (locked to `a1b2c3d`) |',
-  '| `web-design-guidelines` | (none recorded) | `vercel-labs/agent-skills@web-design-guidelines#v2.1.0` |',
+  '| `web-design-guidelines` | (none recorded) | `vercel-labs/skills@web-design-guidelines#v2.1.0` |',
   '',
   '## Installation',
   '',
@@ -171,7 +171,7 @@ describe('generateIndex', () => {
     '      "description": "Skills for frontend work.",',
     '      "skills": [',
     '        "hcjmartin/skills-repo@skill-creator",',
-    '        "vercel-labs/agent-skills@web-design-guidelines#v2.1.0"',
+    '        "vercel-labs/skills@web-design-guidelines#v2.1.0"',
     '      ]',
     '    }',
     '  }',
@@ -186,7 +186,7 @@ describe('generateIndex', () => {
 
   it('records a per-set source after its skills, only for named sets', () => {
     const out = generateIndex([frontend, api], { frontend: 'https://skill-set.md/frontend.skill-set.json' })
-    expect(out).toContain('        "vercel-labs/agent-skills@web-design-guidelines#v2.1.0"\n      ],\n      "source": "https://skill-set.md/frontend.skill-set.json"')
+    expect(out).toContain('        "vercel-labs/skills@web-design-guidelines#v2.1.0"\n      ],\n      "source": "https://skill-set.md/frontend.skill-set.json"')
     // A set with no entry in `sources` carries no `source` key at all.
     const apiEntry = (JSON.parse(out) as { sets: Record<string, { source?: string }> }).sets.api!
     expect('source' in apiEntry).toBe(false)

@@ -683,7 +683,9 @@ describe('--dry-run', () => {
 
     const dryRemove = await cli(cwd, fake, ['remove', 'd', '--dry-run'])
     expect(dryRemove.code).toBe(0)
-    expect(dryRemove.out).toContain('would remove: set "d"')
+    // The preview mirrors the real flow: origin in the removal line, skill removal as an offer.
+    expect(dryRemove.out).toContain('would remove: set "d" (from .agents/skills/skill-sets/d/d.skill-set.json)')
+    expect(dryRemove.out).toContain('would offer to also remove its skills (alpha)')
     expect(existsSync(join(cwd, SETS_DIR, 'd'))).toBe(true)
     expect(existsSync(join(cwd, SKILLS_DIR, 'alpha'))).toBe(true)
   })

@@ -50,7 +50,7 @@ const GOLDEN = [
   '',
   'Skills for frontend work.',
   '',
-  'This set bundles 2 skills. It is generated from `frontend.skill-set.json` — edit that manifest, not this file.',
+  'This set bundles 2 skills. It is generated from `frontend.skill-set.json`. Updates should be made to the manifest, not this file.',
   '',
   '## Skills in this set',
   '',

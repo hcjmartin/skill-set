@@ -22,6 +22,8 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
   const manifest = loadManifest(ctx.cwd, name)
   if (!manifest.ok) return manifest
 
+  ctx.ui.out(`Installing local skill-set ${JSON.stringify(name)}...`)
+
   // Cross-set pin conflicts abort before anything installs (spec §4).
   const all = loadAllManifests(ctx.cwd)
   if (!all.ok) return all
@@ -37,7 +39,7 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
       ok: false,
       error: new SkillSetError(
         ErrorCodes.CONFLICT,
-        `Cannot install ${JSON.stringify(name)} — ${plural(conflicts.length, 'member source')} pinned differently across sets:\n  - ${lines.join('\n  - ')}`,
+        `Cannot install ${JSON.stringify(name)} — ${plural(conflicts.length, 'skill source')} pinned differently across sets:\n  - ${lines.join('\n  - ')}`,
         {
           hint: 'Align the pins across the named sets before installing; skill-set never overwrites one set\'s pin with another\'s.',
           data: { name, conflicts },
@@ -63,11 +65,11 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
   const pending = plan.filter((p) => !p.satisfied)
   const skipped = plan.filter((p) => p.satisfied).map((p) => p.locator)
 
-  ctx.ui.out(`Installing set ${JSON.stringify(name)} — ${plural(manifest.data.skills.length, 'member')}:`)
+  ctx.ui.out(`${plural(manifest.data.skills.length, 'skill')} in set ${JSON.stringify(name)}:`)
   for (const p of plan) {
     const parsed = parseLocator(p.locator)
     const origin = `source ${parsed.source}${parsed.ref === undefined ? '' : `, pinned ${parsed.ref}`}`
-    const status = p.satisfied ? 'satisfied by the lock — skipping' : 'will install'
+    const status = p.satisfied ? 'installed content verified against the lock — skipping' : 'will install'
     ctx.ui.out(`  ${p.locator} ${ctx.ui.style('dim', `(${origin}) ${status}`)}`)
   }
 
@@ -75,7 +77,7 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
     for (const p of pending) {
       ctx.ui.out(ctx.ui.style('dim', `would run: ${formatInvocation(buildAddInvocation(p.locator), ctx.passthrough)}`))
     }
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — nothing installed, nothing written`)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills installed`)
     return { ok: true, data: { name, dryRun: true, wouldInstall: pending.map((p) => p.locator), skipped } }
   }
 
@@ -107,8 +109,8 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
       ok: false,
       error: new SkillSetError(
         ErrorCodes.INSTALL_FAILED,
-        `${failed.length} of ${plural(manifest.data.skills.length, 'member')} failed to install:\n  - ${failed.map((f) => `${f.locator}: ${f.message}`).join('\n  - ')}`,
-        { hint: 'Fix the failing members and re-run; already-satisfied members stay skipped.', data: summary },
+        `${failed.length} of ${plural(manifest.data.skills.length, 'member skill')} failed to install:\n  - ${failed.map((f) => `${f.locator}: ${f.message}`).join('\n  - ')}`,
+        { hint: 'Fix the failing skills and re-run.', data: summary },
       ),
     }
   }

@@ -23,6 +23,8 @@ describe('run — dispatch and meta-flags', () => {
     const { code, out } = await cli(['--help'])
     expect(code).toBe(0)
     expect(out).toContain('Usage: skill-set <command>')
+    // The passthrough hint names the real upstream agent-selection flag.
+    expect(out).toContain('skill-set install demo -- --agent claude-code cursor')
     expect(out).toContain('Exit codes: 0 ok · 1 error · 2 usage · 3 drift · 4 conflict')
   })
 

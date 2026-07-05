@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { ErrorCodes, SkillSetError } from '../errors.ts'
+import { SKILL_SET_MD_FILENAME } from '../generate.ts'
 import { DRAFT_SCHEMA_URL, MANIFEST_SUFFIX, NAME_PATTERN } from '../manifest.ts'
-import { SETS_DIR, setPaths } from '../project.ts'
+import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
+import { installSet } from './install.ts'
 import { plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const INIT_USAGE = 'skill-set init <set> <locator> [locators...]'
@@ -37,17 +39,36 @@ export async function cmdInit(args: string[], ctx: CommandContext): Promise<Comm
     }
   }
 
+  ctx.ui.out(`Creating skill-set ${JSON.stringify(name)}...`)
+
   if (ctx.dryRun) {
-    ctx.ui.out(ctx.ui.style('dim', `would write: ${relative} (${plural(locators.length, 'member')})`))
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — nothing written`)
+    ctx.ui.out(ctx.ui.style('dim', `would write: ${relative} (${plural(locators.length, 'skill')})`))
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed`)
     return { ok: true, data: { name, dryRun: true, manifest: relative, members: locators.length } }
   }
 
   mkdirSync(paths.dir, { recursive: true })
   const manifest = { $schema: DRAFT_SCHEMA_URL, name, version: '0.1.0', skills: locators }
   writeFileSync(paths.manifest, `${JSON.stringify(manifest, null, 2)}\n`)
+  ctx.ui.out(`${ctx.ui.style('green', '✓')} Created skill-set ${JSON.stringify(name)} — ${relative} (${plural(locators.length, 'skill')})`)
 
-  ctx.ui.out(`${ctx.ui.style('green', '✓')} Created ${relative}`)
-  ctx.ui.out(ctx.ui.style('dim', `Next: "skill-set install ${name}", then "skill-set build".`))
+  // A convenience offer, not a gate: silently declined when no prompt is possible.
+  const proceed = await ctx.ui.confirm(`Install the skills and generate the set files now?`, { optional: true })
+  if (!proceed.ok) return proceed
+  if (proceed.data) {
+    const install = await installSet(ctx, name)
+    if (!install.ok) return install
+    const lock = loadLockIfPresent(ctx.cwd, name)
+    if (!lock.ok) return lock
+    const page = writeSetPage(ctx.cwd, manifest, lock.data)
+    const index = writeIndex(ctx.cwd)
+    if (!index.ok) return index
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} Generated ${page} and ${index.data}`)
+    return { ok: true, data: { name, manifest: relative, members: locators.length, install: install.data, page, index: index.data } }
+  }
+
+  ctx.ui.out(ctx.ui.style('dim', 'Next:'))
+  ctx.ui.out(ctx.ui.style('dim', `  install the set's skills with "skill-set install ${name}"`))
+  ctx.ui.out(ctx.ui.style('dim', `  generate ${SKILL_SET_MD_FILENAME} and the index with "skill-set build" after installing`))
   return { ok: true, data: { name, manifest: relative, members: locators.length } }
 }

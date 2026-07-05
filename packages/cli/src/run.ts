@@ -33,7 +33,7 @@ const COMMANDS: Record<string, CommandEntry> = {
 
 const HELP = `skill-set — define, share, and install named, versioned sets of agent skills.
 
-Usage: skill-set <command> [args] [flags] [-- <args for the wrapped skills CLI>]
+Usage: skill-set <command> [args] [flags] [-- <args for the skills CLI>]
 
 Commands:
 ${Object.values(COMMANDS)
@@ -46,6 +46,10 @@ Flags:
   --dry-run       Print what would run or be written; change nothing, spawn nothing
   --help, -h      Show this help
   --version, -v   Show the skill-set version and the pinned skills version
+
+Args after "--" pass through to the skills CLI verbatim.
+  e.g. "skill-set install demo -- --agent claude-code cursor" installs to those agents only.
+See npx skills --help.
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 drift · 4 conflict
 

@@ -27,9 +27,10 @@ export interface Ui {
   style(format: Parameters<typeof styleText>[0], text: string): string
   /**
    * Asks a yes/no question. --yes answers true without asking; when no prompt is possible
-   * (--json, CI, no TTY) the caller gets a CONFIRM_REQUIRED error instead of a hang.
+   * (--json, CI, no TTY) the caller gets a CONFIRM_REQUIRED error instead of a hang —
+   * unless the prompt is `optional` (a convenience offer), which then resolves false.
    */
-  confirm(question: string): Promise<Result<boolean>>
+  confirm(question: string, opts?: { optional?: boolean }): Promise<Result<boolean>>
 }
 
 export function createUi(opts: UiOptions): Ui {
@@ -51,9 +52,10 @@ export function createUi(opts: UiOptions): Ui {
     style(format, text) {
       return colors ? styleText(format, text) : text
     },
-    async confirm(question) {
+    async confirm(question, confirmOpts) {
       if (opts.yes) return { ok: true, data: true }
       if (opts.json || !interactive) {
+        if (confirmOpts?.optional === true) return { ok: true, data: false }
         return {
           ok: false,
           error: new SkillSetError(ErrorCodes.CONFIRM_REQUIRED, `Confirmation required: ${question}`, {

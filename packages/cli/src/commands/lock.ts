@@ -18,16 +18,18 @@ export async function cmdLock(args: string[], ctx: CommandContext): Promise<Comm
   const manifest = loadManifest(ctx.cwd, name)
   if (!manifest.ok) return manifest
 
+  ctx.ui.out(`Locking skill-set ${JSON.stringify(name)} — recording installed skill content...`)
+
   const locked = lockSet(ctx.cwd, name, manifest.data, { dryRun: ctx.dryRun })
   if (!locked.ok) return locked
 
   const relative = `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}`
   if (ctx.dryRun) {
     ctx.ui.out(ctx.ui.style('dim', `would write: ${relative} (setHash ${locked.data.setHash})`))
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — nothing written`)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed`)
     return { ok: true, data: { name, dryRun: true, lock: relative, setHash: locked.data.setHash } }
   }
-  ctx.ui.out(`${ctx.ui.style('green', '✓')} Locked ${name} (${plural(manifest.data.skills.length, 'member')}) — ${relative}`)
+  ctx.ui.out(`${ctx.ui.style('green', '✓')} Locked ${name} (${plural(manifest.data.skills.length, 'skill')}) — ${relative}`)
   ctx.ui.out(ctx.ui.style('dim', `setHash ${locked.data.setHash}`))
   return { ok: true, data: { name, lock: relative, setHash: locked.data.setHash, members: manifest.data.skills.length } }
 }
@@ -52,8 +54,8 @@ export function lockSet(cwd: string, name: string, manifest: Manifest, opts?: { 
       ok: false,
       error: new SkillSetError(
         ErrorCodes.MEMBER_NOT_INSTALLED,
-        `Cannot lock ${JSON.stringify(name)} — ${problems.length} of ${plural(manifest.skills.length, 'member')} are not resolvable to installed skills:\n  - ${problems.join('\n  - ')}`,
-        { hint: `Install them first: "skill-set install ${name}".`, data: { name, problems } },
+        `Cannot lock ${JSON.stringify(name)} — ${problems.length} of ${plural(manifest.skills.length, 'skill')} could not be found:\n  - ${problems.join('\n  - ')}`,
+        { hint: `Install the skills first: "skill-set install ${name}".`, data: { name, problems } },
       ),
     }
   }

@@ -4,7 +4,7 @@ import { MANIFEST_SUFFIX, parseManifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
 import { parseLocator } from '../resolver.ts'
 import { installSet } from './install.ts'
-import { splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
+import { plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const ADD_USAGE = 'skill-set add <url|path>'
 
@@ -18,12 +18,24 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const [source, ...extra] = split.data.positionals
   if (source === undefined || extra.length > 0) return usageError('add takes exactly one manifest URL or path', ADD_USAGE)
 
+  ctx.ui.out(`Adding skill-set from ${source}...`)
+
   const text = await readManifestSource(source, ctx)
   if (!text.ok) return text
 
   const manifest = parseManifest(text.data)
   if (!manifest.ok) return manifest
   const name = manifest.data.name
+
+  // The provenance summary comes before anything is written or installed (spec §3),
+  // and before the already-exists refusal so the user sees what was fetched.
+  ctx.ui.out(`Set ${JSON.stringify(name)} v${manifest.data.version}${manifest.data.description === undefined ? '' : ` — ${manifest.data.description}`}`)
+  if (manifest.data.author !== undefined) ctx.ui.out(ctx.ui.style('dim', `author: ${manifest.data.author.name}`))
+  ctx.ui.out(`${plural(manifest.data.skills.length, 'member skill')}:`)
+  for (const locator of manifest.data.skills) {
+    const parsed = parseLocator(locator)
+    ctx.ui.out(`  ${locator} ${ctx.ui.style('dim', `(source ${parsed.source}${parsed.ref === undefined ? '' : `, pinned ${parsed.ref}`})`)}`)
+  }
 
   const paths = setPaths(ctx.cwd, name)
   if (existsSync(paths.manifest)) {
@@ -32,28 +44,22 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
       error: new SkillSetError(
         ErrorCodes.SET_EXISTS,
         `A set named ${JSON.stringify(name)} already exists at ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`,
-        { hint: 'Remove the existing set first; skill-set never silently overwrites (spec §3).', data: { name } },
+        {
+          hint: `Remove with "skill-set remove ${name}", or install the existing set with "skill-set install ${name}".`,
+          data: { name },
+        },
       ),
     }
-  }
-
-  // The provenance summary comes before anything is written or installed (spec §3).
-  ctx.ui.out(`Set ${JSON.stringify(name)} v${manifest.data.version}${manifest.data.description === undefined ? '' : ` — ${manifest.data.description}`}`)
-  if (manifest.data.author !== undefined) ctx.ui.out(ctx.ui.style('dim', `author: ${manifest.data.author.name}`))
-  ctx.ui.out(`${manifest.data.skills.length} members:`)
-  for (const locator of manifest.data.skills) {
-    const parsed = parseLocator(locator)
-    ctx.ui.out(`  ${locator} ${ctx.ui.style('dim', `(source ${parsed.source}${parsed.ref === undefined ? '' : `, pinned ${parsed.ref}`})`)}`)
   }
 
   if (ctx.dryRun) {
     ctx.ui.out(ctx.ui.style('dim', `would write: ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`))
     ctx.ui.out(ctx.ui.style('dim', `would install: ${manifest.data.skills.join(', ')}`))
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — nothing written, nothing installed`)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills installed`)
     return { ok: true, data: { name, dryRun: true, wouldInstall: manifest.data.skills } }
   }
 
-  const confirmed = await ctx.ui.confirm(`Add ${JSON.stringify(name)} and install its members?`)
+  const confirmed = await ctx.ui.confirm(`Add ${JSON.stringify(name)} and install skills?`)
   if (!confirmed.ok) return confirmed
   if (!confirmed.data) {
     ctx.ui.out('Aborted — nothing written.')
@@ -80,10 +86,10 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
 async function readManifestSource(source: string, ctx: CommandContext): Promise<Result<string>> {
   if (/^https:\/\//i.test(source)) return (ctx.fetcher ?? fetchManifest)(source)
   if (/^http:\/\//i.test(source)) {
-    return fetchFail(source, 'manifests are fetched over HTTPS only (spec §3)', 'Serve the manifest at an https:// URL.')
+    return fetchFail(source, 'manifests are fetched over HTTPS only', 'Serve the manifest at an https:// URL.')
   }
   if (!existsSync(source)) {
-    return fetchFail(source, 'no such file', 'Pass an https:// URL or a path to a .skill-set.json file.')
+    return fetchFail(source, 'no such file', 'Pass an https:// URL or a local path to a .skill-set.json file.')
   }
   return { ok: true, data: readFileSync(source, 'utf8') }
 }

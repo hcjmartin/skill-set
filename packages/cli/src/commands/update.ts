@@ -29,18 +29,18 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
       ok: false,
       error: new SkillSetError(
         ErrorCodes.MEMBER_NOT_INSTALLED,
-        `Cannot update ${JSON.stringify(name)} — ${problems.length} members are not installed:\n  - ${problems.join('\n  - ')}`,
+        `Cannot update ${JSON.stringify(name)} — ${problems.length} skills are not installed:\n  - ${problems.join('\n  - ')}`,
         { hint: `Install the set first: "skill-set install ${name}".`, data: { name, problems } },
       ),
     }
   }
 
   const names = [...skills]
-  ctx.ui.out(`Updating ${plural(names.length, 'skill')} via the pinned skills CLI: ${names.join(', ')}`)
+  ctx.ui.out(`Updating skill-set ${JSON.stringify(name)} — ${plural(names.length, 'skill')} with npx skills: ${names.join(', ')}`)
   const invocation = buildUpdateInvocation(names)
   if (ctx.dryRun) {
     ctx.ui.out(ctx.ui.style('dim', `would run: ${formatInvocation(invocation, ctx.passthrough)}`))
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — nothing updated, lock and generated files untouched`)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no skills updated, no files changed`)
     return { ok: true, data: { name, dryRun: true, wouldUpdate: names } }
   }
   ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))

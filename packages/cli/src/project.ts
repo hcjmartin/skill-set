@@ -52,12 +52,12 @@ export function loadManifest(cwd: string, name: string): Result<Manifest> {
       ok: false,
       error: new SkillSetError(
         ErrorCodes.SET_NOT_FOUND,
-        `Set ${JSON.stringify(name)} not found (no ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX})`,
+        `Set manifest ${JSON.stringify(name)} not found (expected ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX})`,
         {
           hint:
             available.length > 0
-              ? `Available sets: ${available.join(', ')}.`
-              : 'No sets exist yet — create one with "skill-set init <name>".',
+              ? `Available sets: ${available.join(', ')}. Install a shared set from a manifest URL: "skill-set add <https-url>".`
+              : 'No sets here. Create a new set with "skill-set init <name>". Add a shared set with "skill-set add <https-url>".',
           data: { name, available },
         },
       ),

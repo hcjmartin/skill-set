@@ -106,7 +106,7 @@ export interface ResolvedMember {
  */
 export function locateMember(locator: string, opts: { cwd: string }): Result<ResolvedMember> {
   if (locator.trim() === '') {
-    return fail(ErrorCodes.RESOLVE_FAILED, 'A member locator must be a non-empty string (spec §1)')
+    return fail(ErrorCodes.RESOLVE_FAILED, "A member skill locator must be a non-empty string")
   }
   const lock = readLockSkills(opts.cwd)
   if (!lock.ok) return lock
@@ -123,7 +123,7 @@ export function locateMember(locator: string, opts: { cwd: string }): Result<Res
     if (candidates.length > 1) {
       return fail(
         ErrorCodes.RESOLVE_AMBIGUOUS,
-        `Member ${JSON.stringify(locator)} matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set member must resolve to exactly one skill (spec §1).`,
+        `Member ${JSON.stringify(locator)} matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set skill must resolve to exactly one skill`,
         { hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${parsed.source}@${candidates[0]!}`)}.`, data: { locator, candidates } },
       )
     }
@@ -177,7 +177,7 @@ export async function resolveMember(
   opts: { cwd: string; runner?: CommandRunner; extraArgs?: readonly string[]; capture?: boolean },
 ): Promise<Result<ResolvedMember>> {
   if (locator.trim() === '') {
-    return fail(ErrorCodes.RESOLVE_FAILED, 'A member locator must be a non-empty string (spec §1)')
+    return fail(ErrorCodes.RESOLVE_FAILED, 'A member skill locator must be a non-empty string')
   }
 
   const before = readLockSkills(opts.cwd)
@@ -276,7 +276,7 @@ function discoveryFailure(locator: string, source: string, candidates: string[])
   if (candidates.length > 0) {
     return fail(
       ErrorCodes.RESOLVE_AMBIGUOUS,
-      `Member ${JSON.stringify(locator)} was installed, but matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set member must resolve to exactly one skill (spec §1).`,
+      `Member ${JSON.stringify(locator)} was installed, but matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set member must resolve to exactly one skill.`,
       {
         hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${source}@${candidates[0]!}`)}.`,
         data: { locator, source, candidates },

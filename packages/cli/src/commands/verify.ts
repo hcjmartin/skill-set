@@ -3,12 +3,12 @@ import { join } from 'node:path'
 import ci from 'ci-info'
 import { ErrorCodes, SkillSetError } from '../errors.ts'
 import { specFolderHash } from '../hash.ts'
-import type { SetLock } from '../lock.ts'
+import { LOCK_SUFFIX, type SetLock } from '../lock.ts'
 import type { Manifest } from '../manifest.ts'
 import { loadLockIfPresent, loadManifest } from '../project.ts'
 import { buildCheckInvocation, locateMember, SKILLS_DIR } from '../resolver.ts'
 import { runCommand } from '../spawn.ts'
-import { formatInvocation, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
+import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const VERIFY_USAGE = 'skill-set verify <set> [--frozen|--no-frozen]'
 
@@ -28,6 +28,11 @@ export async function cmdVerify(args: string[], ctx: CommandContext): Promise<Co
   const inCi = ctx.ci ?? ci.isCI
   const frozen = flags.has('--frozen') ? true : flags.has('--no-frozen') ? false : inCi && lock.data !== undefined
 
+  ctx.ui.out(
+    frozen
+      ? `Verifying installed skill-set ${JSON.stringify(name)} — validating contents against the lock hash...`
+      : `Verifying installed skill-set ${JSON.stringify(name)} — checking installed skills against the set...`,
+  )
   return frozen ? verifyFrozen(ctx, name, manifest.data, lock.data) : verifyDefault(ctx, name, manifest.data, lock.data)
 }
 
@@ -41,9 +46,9 @@ function verifyFrozen(
   if (lock === undefined) {
     return {
       ok: false,
-      error: new SkillSetError(ErrorCodes.FROZEN_NO_LOCK, `Frozen verify needs a set-lock, and ${JSON.stringify(name)} has none`, {
+      error: new SkillSetError(ErrorCodes.FROZEN_NO_LOCK, `Missing skill-set lock file for ${JSON.stringify(name)} — frozen verify needs ${name}${LOCK_SUFFIX}`, {
         hint: `Create one with "skill-set lock ${name}" and commit it.`,
-        data: { name },
+        data: { name, expected: `${name}${LOCK_SUFFIX}` },
       }),
     }
   }
@@ -71,7 +76,7 @@ function verifyFrozen(
 
   const problems = drifted.length + missing.length + added.length + removed.length
   if (problems === 0) {
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} ${name}: ${checked} members verified frozen — content matches the set-lock`)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} ${name}: all set skills match the set lock (${checked}/${checked})`)
     return { ok: true, data: { name, mode: 'frozen', checked } }
   }
 
@@ -86,9 +91,9 @@ function verifyFrozen(
     ok: false,
     error: new SkillSetError(
       ErrorCodes.DRIFT,
-      `Set ${JSON.stringify(name)} does not match its lock — ${problems} problem(s):\n  - ${lines.join('\n  - ')}`,
+      `Set ${JSON.stringify(name)} does not match its lock — ${plural(problems, 'problem')}:\n  - ${lines.join('\n  - ')}`,
       {
-        hint: `Reinstall to match the lock ("skill-set install ${name}"), or accept the current state ("skill-set lock ${name}").`,
+        hint: `Reinstall from manifest ("skill-set install ${name}"), or accept the current state ("skill-set lock ${name}").`,
         data: { name, mode: 'frozen', checked, drifted, missing, added, removed },
       },
     ),
@@ -139,21 +144,21 @@ async function verifyDefault(
     }
   }
 
-  ctx.ui.out(
-    `Checks run: member presence (${present.length}/${manifest.skills.length} present) + upstream staleness check. ` +
-      `Content hashes were not recomputed — use --frozen for byte-exact verification.`,
-  )
+  ctx.ui.out('Checks run:')
+  ctx.ui.out(`  - skill members (${present.length}/${manifest.skills.length} found)`)
+  ctx.ui.out('  - upstream staleness check')
 
   if (missing.length > 0) {
     return {
       ok: false,
       error: new SkillSetError(
         ErrorCodes.MEMBER_NOT_INSTALLED,
-        `${missing.length} of ${manifest.skills.length} members of ${JSON.stringify(name)} are not installed:\n  - ${missing.map((m) => `${m.locator}: ${m.message}`).join('\n  - ')}`,
-        { hint: `Install them with "skill-set install ${name}".`, data: { name, mode: 'default', present, missing } },
+        `${missing.length} of ${manifest.skills.length} skills of ${JSON.stringify(name)} are not installed:\n  - ${missing.map((m) => `${m.locator}: ${m.message}`).join('\n  - ')}`,
+        { hint: `Install with "skill-set install ${name}".`, data: { name, mode: 'default', present, missing } },
       ),
     }
   }
-  ctx.ui.out(`${ctx.ui.style('green', '✓')} ${name}: all ${present.length} members present`)
+  ctx.ui.out(`${ctx.ui.style('green', '✓')} ${name}: all set skills present (${present.length}/${manifest.skills.length})`)
+  ctx.ui.out('WARNING: skill content was not checked — use --frozen to verify content matches the set lock.')
   return { ok: true, data: { name, mode: 'default', present, missing: [], upstreamCheckExit: checkExit } }
 }

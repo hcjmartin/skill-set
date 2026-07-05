@@ -113,10 +113,28 @@ describe('authoring round-trip: init → install → lock → build → verify �
   const setDir = join(cwd, SETS_DIR, 'my-tools')
 
   it('init scaffolds the manifest', async () => {
-    const { code } = await cli(cwd, fake, ['init', 'my-tools', 'acme/alpha-repo@alpha', 'acme/beta-repo'])
+    const { code, out } = await cli(cwd, fake, ['init', 'my-tools', 'acme/alpha-repo@alpha', 'acme/beta-repo'])
     expect(code).toBe(0)
+    expect(out).toContain('Creating skill-set "my-tools"')
+    expect(out).toContain(`install the set's skills with "skill-set install my-tools"`)
     const manifest = JSON.parse(readFileSync(join(setDir, 'my-tools.skill-set.json'), 'utf8')) as { skills: string[] }
     expect(manifest.skills).toEqual(['acme/alpha-repo@alpha', 'acme/beta-repo'])
+  })
+
+  it('init alone generates nothing beyond the manifest — the install offer was declined', () => {
+    expect(existsSync(join(setDir, 'SKILL-SET.md'))).toBe(false)
+    expect(existsSync(join(cwd, SETS_DIR, INDEX_FILENAME))).toBe(false)
+  })
+
+  it('init --yes installs the skills and generates the set files in one pass', async () => {
+    const other = project()
+    const otherFake = fakeSkills(other)
+    const { code, out } = await cli(other, otherFake, ['init', 'quick', 'acme/alpha-repo@alpha', '--yes'])
+    expect(code).toBe(0)
+    expect(out).toContain('1 installed, 0 skipped, 0 failed')
+    const page = readFileSync(join(other, SETS_DIR, 'quick', 'SKILL-SET.md'), 'utf8')
+    expect(page).toContain('Does alpha things. Use when alpha work comes up.')
+    expect(existsSync(join(other, SETS_DIR, INDEX_FILENAME))).toBe(true)
   })
 
   it('init refuses to overwrite an existing set', async () => {
@@ -128,6 +146,8 @@ describe('authoring round-trip: init → install → lock → build → verify �
   it('install resolves every member through the pinned upstream', async () => {
     const { code, out } = await cli(cwd, fake, ['install', 'my-tools'])
     expect(code).toBe(0)
+    expect(out).toContain('Installing local skill-set "my-tools"')
+    expect(out).toContain('2 skills in set "my-tools":')
     expect(out).toContain('2 installed, 0 skipped, 0 failed')
     expect(existsSync(join(cwd, SKILLS_DIR, 'alpha'))).toBe(true)
     expect(existsSync(join(cwd, SKILLS_DIR, 'beta-repo'))).toBe(true)
@@ -148,6 +168,7 @@ describe('authoring round-trip: init → install → lock → build → verify �
     const spawnsBefore = fake.calls.length
     const { code, out } = await cli(cwd, fake, ['install', 'my-tools'])
     expect(code).toBe(0)
+    expect(out).toContain('installed content verified against the lock — skipping')
     expect(out).toContain('0 installed, 2 skipped, 0 failed')
     expect(fake.calls.length).toBe(spawnsBefore)
   })
@@ -176,7 +197,10 @@ describe('authoring round-trip: init → install → lock → build → verify �
     // Default mode does not recompute content, so it stays green and says so.
     const soft = await cli(cwd, fake, ['verify', 'my-tools'])
     expect(soft.code).toBe(0)
-    expect(soft.out).toContain('Content hashes were not recomputed')
+    expect(soft.out).toContain('Checks run:')
+    expect(soft.out).toContain('- skill members (2/2 found)')
+    expect(soft.out).toContain('all set skills present (2/2)')
+    expect(soft.out).toContain('WARNING: skill content was not checked — use --frozen')
   })
 
   it('in CI, verify defaults to frozen when a lock exists', async () => {
@@ -290,7 +314,11 @@ describe('add', () => {
 
     const repeat = await cli(cwd, fake, ['add', 'https://example.test/fetched-set.skill-set.json', '--yes'], { fetcher })
     expect(repeat.code).toBe(1)
+    // The fetched summary still prints, so the user sees what the refused manifest contained.
+    expect(repeat.out).toContain('Set "fetched-set" v1.0.0')
     expect(repeat.err).toContain('already exists')
+    expect(repeat.err).toContain('skill-set remove fetched-set')
+    expect(repeat.err).toContain('skill-set install fetched-set')
   })
 
   it('rejects plain http sources', async () => {
@@ -362,7 +390,7 @@ describe('usage errors', () => {
     await cli(cwd, fake, ['init', 'x', 'acme/a-repo@a', 'acme/b-repo@b'])
     const { code, err } = await cli(cwd, fake, ['lock', 'x'])
     expect(code).toBe(1)
-    expect(err).toContain('2 of 2 members are not resolvable')
+    expect(err).toContain('2 of 2 skills could not be found')
     expect(err).toContain('acme/a-repo@a')
     expect(err).toContain('acme/b-repo@b')
   })
@@ -374,6 +402,7 @@ describe('usage errors', () => {
     await cli(cwd, fake, ['install', 'x'])
     const { code, err } = await cli(cwd, fake, ['verify', 'x', '--frozen'])
     expect(code).toBe(2)
+    expect(err).toContain('x.skill-set.lock.json')
     expect(err).toContain('skill-set lock x')
   })
 
@@ -427,6 +456,7 @@ describe('--dry-run', () => {
     const { code, out } = await cli(cwd, fake, ['install', 'd', '--dry-run'])
     expect(code).toBe(0)
     expect(out).toContain('would run: npx -y skills@1.5 add acme/alpha-repo --skill alpha --yes')
+    expect(out).toContain('dry run — no files changed, no skills installed')
     expect(fake.calls).toHaveLength(0)
     expect(existsSync(join(cwd, SKILLS_DIR, 'alpha'))).toBe(false)
   })

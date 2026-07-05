@@ -26,6 +26,8 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
   const manifest = loadManifest(ctx.cwd, name)
   if (!manifest.ok) return manifest
 
+  ctx.ui.out(`Removing skill-set ${JSON.stringify(name)}...`)
+
   if (!ctx.dryRun) {
     const confirmed = await ctx.ui.confirm(
       removeSkills
@@ -54,7 +56,7 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
       ctx.ui.out(ctx.ui.style('dim', `would run: ${formatInvocation(buildRemoveInvocation(removable), ctx.passthrough)}`))
     }
     for (const kept of skillsKept) ctx.ui.out(ctx.ui.style('dim', `  would keep ${kept.skill ?? kept.member}: ${kept.reason}`))
-    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — nothing removed`)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills removed`)
     return { ok: true, data: { name, dryRun: true, wouldRemoveSkills: removable, skillsKept } }
   }
 

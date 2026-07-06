@@ -1,6 +1,11 @@
 packages:
   - packages/*
 
+# Prebuilt binaries. Postinstall off.
+allowBuilds:
+  esbuild: false
+  sharp: false
+
 # hard-fails install when no in-range version clears the cutoff — set version floors accordingly
 minimumReleaseAge: 10080
 onlyBuiltDependencies: []

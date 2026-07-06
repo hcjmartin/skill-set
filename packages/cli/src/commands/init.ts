@@ -23,7 +23,7 @@ export async function cmdInit(args: string[], ctx: CommandContext): Promise<Comm
     // The schema requires at least one member, so an empty scaffold would be invalid on arrival.
     return usageError(
       'init needs at least one member locator — a skill-set cannot be empty',
-      `${INIT_USAGE}, e.g. skill-set init ${name} vercel-labs/skills@find-skills`,
+      `${INIT_USAGE}, e.g. skill-set init ${name} vercel-labs/agent-skills@find-skills`,
     )
   }
 

@@ -1,24 +1,13 @@
 name: Release
 
-# Two-phase changesets flow: every push to main opens or refreshes a "Version Packages"
-# PR from the pending changesets; merging that PR publishes @skill-set/cli to npm via
-# OIDC trusted publishing with provenance.
+# Do not rename this file or the "release" environment, npm's Trusted Publisher configuration references both by name
+
+# Release automation, via changesets:
+# - On push to main: opens or updates a "Version Packages" PR (version bumps + changelogs from pending changesets)
+# - On merge of Version Packages PR: publishes to npm via OIDC trusted publishing, with provenance
 #
-# NOTE: The publish leg stays inert until the NPM_TRUSTED_PUBLISHING repository variable is
-# set; until then the workflow only maintains the Version PR. One-time setup:
-#   1. First publish of @skill-set/cli must happen outside this workflow (npm trusted
-#      publishers attach to an existing package): `npm publish --access public` from
-#      packages/cli after a build. That one release carries no provenance.
-#   2. npmjs.com → package @skill-set/cli → Settings → Publishing access → add a
-#      Trusted Publisher: GitHub Actions, owner "hcjmartin", repository "skill-set",
-#      workflow filename "release.yml", environment "release". Then set publishing
-#      access to require trusted publishing (disallows tokens).
-#   3. GitHub repo → Settings → Actions → General → allow GitHub Actions to create
-#      and approve pull requests (needed for the Version PR).
-#   4. GitHub repo → Settings → Secrets and variables → Actions → Variables → add
-#      repository variable NPM_TRUSTED_PUBLISHING = enabled.
-# packages/site (private) and the skills-sets alias are excluded via .changeset/config.json;
-# the alias is published manually on its own cadence.
+# Publishes: packages/cli as @skill-set/cli
+# Does not cover: packages/site, packages/skills-sets
 
 permissions:
   contents: read

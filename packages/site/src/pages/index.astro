@@ -1,0 +1,108 @@
+---
+import { Code } from 'astro:components'
+import Base from '../layouts/Base.astro'
+
+const theme = 'github-dark-default'
+
+const manifest = `{
+  "$schema": "https://skill-set.md/schema/draft/skill-set.schema.json",
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "Skills for authoring and reviewing frontend-facing work.",
+  "author": { "name": "Harry Martin", "url": "https://github.com/hcjmartin" },
+  "skills": [
+    "hcjmartin/skills-repo@skill-creator",
+    "vercel-labs/agent-skills@web-design-guidelines#v2.1.0",
+    "https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5",
+    "https://flocker.md/skills@research-notes"
+  ]
+}`
+---
+
+<Base
+  title="skill-set"
+  description="Named, versioned sets of agent skills, defined in a single JSON manifest. A CLI and an open format for sharing, installing, and verifying skill-sets."
+>
+  <h1>Named, versioned sets of agent skills</h1>
+  <p class="lede">
+    A skill-set is a single JSON manifest that names a group of agent skills and where they come from. The
+    <code>skill-set</code> CLI installs the members, records exactly what was installed in a deterministic lock, and
+    verifies the installed bytes later — locally or in CI.
+  </p>
+
+  <Code code="npx @skill-set/cli init my-tools vercel-labs/agent-skills@find-skills" lang="shellscript" theme={theme} />
+
+  <p>
+    <a href="/cli/">CLI reference</a> · <a href="/spec/">Format specification</a> ·
+    <a href="https://github.com/hcjmartin/skill-set">Source on GitHub</a>
+  </p>
+
+  <h2>The manifest</h2>
+  <p>
+    One file per set, <code>&lt;name&gt;.skill-set.json</code>, validated by a
+    <a href="/schema/draft/skill-set.schema.json">published JSON Schema</a>. Members are the same source locators the
+    <a href="https://skills.sh">skills CLI</a> accepts — GitHub shorthands, git URLs, local paths, well-known HTTPS
+    domains — optionally pinned with <code>#tag-or-commit</code>.
+  </p>
+  <Code code={manifest} lang="json" theme={theme} />
+
+  <h2>Quickstart</h2>
+  <p>Define a set and install its skills. <code>init</code> writes the manifest and offers to install immediately:</p>
+  <Code
+    code={`npx @skill-set/cli init frontend \\
+  hcjmartin/skills-repo@skill-creator \\
+  "vercel-labs/agent-skills@web-design-guidelines#v2.1.0"`}
+    lang="shellscript"
+    theme={theme}
+  />
+  <p>
+    The manifest lands at <code>.agents/skills/skill-sets/frontend/frontend.skill-set.json</code>; each member installs
+    as an ordinary skill at <code>.agents/skills/&lt;skill-name&gt;/</code>. Install (or re-install) any time —
+    members whose locked content is already on disk are skipped:
+  </p>
+  <Code code="npx @skill-set/cli install frontend" lang="shellscript" theme={theme} />
+  <p>Record the resolved content of every member — a SHA-256 per skill folder plus a rollup hash:</p>
+  <Code code="npx @skill-set/cli lock frontend" lang="shellscript" theme={theme} />
+  <p>
+    Then verify byte-exactly. Drift exits with code 3 and names every drifted member with its expected and actual
+    hash:
+  </p>
+  <Code code="npx @skill-set/cli verify frontend --frozen" lang="shellscript" theme={theme} />
+
+  <h2>Sharing a set</h2>
+  <p>
+    A skill-set is shareable as a URL to its manifest — any HTTPS location serving the JSON file works; no registry
+    required. <code>add</code> fetches, validates, shows the member and source summary, then installs:
+  </p>
+  <Code code="npx @skill-set/cli add https://example.com/frontend.skill-set.json" lang="shellscript" theme={theme} />
+
+  <h2>How it works</h2>
+  <ul>
+    <li>
+      <strong>The manifest is authored intent.</strong> It carries names, versions, and locators — never hashes. The
+      generated <code>&lt;name&gt;.skill-set.lock.json</code> carries resolved reality: content hashes and resolved
+      refs.
+    </li>
+    <li>
+      <strong>Resolution is delegated.</strong> The CLI shells out to the pinned upstream
+      <code>npx skills@1.5</code> to fetch and install members; it adds sets, locks, and verification on top. Arguments
+      after <code>--</code> pass through to the skills CLI verbatim.
+    </li>
+    <li>
+      <strong>Everything generated is deterministic.</strong> Identical inputs produce identical bytes — no
+      timestamps, sorted keys — so locks are merge-friendly and diffs stay readable.
+    </li>
+    <li>
+      <strong>The format is an open spec.</strong> Manifests, locks, and both hashes are fully defined by the
+      <a href="/spec/">specification</a>, with published schemas and conformance fixtures. An independent
+      implementation needs nothing from this CLI.
+    </li>
+  </ul>
+
+  <h2>Read more</h2>
+  <ul>
+    <li><a href="/cli/">CLI reference</a> — every command, global flags, exit codes, JSON output.</li>
+    <li><a href="/spec/">Specification</a> — the normative format: manifest, lock, hashing, conformance.</li>
+    <li><a href="/faq/">FAQ</a> — where files live, cross-set conflicts, verifying in CI.</li>
+  </ul>
+</Base>

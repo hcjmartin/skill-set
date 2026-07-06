@@ -1,0 +1,35 @@
+---
+// The spec convention document, imported from the repo at build time — never duplicated.
+import { Content, getHeadings } from '../../../../spec/draft/README.md'
+import Base from '../layouts/Base.astro'
+
+const toc = getHeadings().filter((h) => h.depth === 2)
+---
+
+<Base
+  title="Specification"
+  description="The normative skill-set format: manifest, validation rules, sharing, resolution, the set-lock, content hashing, determinism, and conformance."
+>
+  <article>
+    <p class="note">
+      This page is rendered directly from
+      <a href="https://github.com/hcjmartin/skill-set/blob/main/spec/draft/README.md">spec/draft/README.md</a>
+      in the repository. The schemas it references are served here:
+      <a href="/schema/draft/skill-set.schema.json">skill-set.schema.json</a> and
+      <a href="/schema/draft/skill-set.lock.schema.json">skill-set.lock.schema.json</a>.
+    </p>
+
+    <nav class="toc" aria-label="Table of contents">
+      <h2>Contents</h2>
+      <ol>
+        {toc.map((h) => (
+          <li>
+            <a href={`#${h.slug}`}>{h.text}</a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+
+    <Content />
+  </article>
+</Base>

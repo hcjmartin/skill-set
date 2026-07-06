@@ -577,6 +577,8 @@ describe('share', () => {
     expect(code).toBe(0)
     expect(out).toContain('Created shareable skill-set at .agents/skills/skill-sets/_share/portable')
     expect(out).toContain('remote delivered skill content, not local skill folders')
+    expect(out).toContain('Notice: 1 installed local skill differs from the fetched remote content used for this share lock')
+    expect(out).toContain('hcjmartin/alpha-repo@alpha (skill alpha)')
 
     const shareDir = join(cwd, SETS_DIR, '_share', 'portable')
     expect(existsSync(join(shareDir, 'portable.skill-set.json'))).toBe(true)
@@ -639,6 +641,24 @@ describe('share', () => {
     expect(code).toBe(0)
     expect(existsSync(join(cwd, SETS_DIR, 'share', 'share.skill-set.json'))).toBe(true)
     expect(existsSync(join(cwd, SETS_DIR, '_share', 'share', 'share.skill-set.json'))).toBe(true)
+  })
+
+  it('lets an interactive user keep staged content for review', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'reviewable', 'hcjmartin/epsilon-repo@epsilon'])
+
+    const { code, out } = await cli(cwd, fake, ['share', 'reviewable', '--output', 'exports/reviewable'], {
+      interactive: true,
+      promptAnswers: ['', '', ''],
+      confirmAnswers: [false],
+    })
+    expect(code).toBe(0)
+    expect(out).toContain('Staged skill contents used for this share lock are at:')
+    const kept = /Staged files kept at (.+)/.exec(out)?.[1]
+    expect(kept).toBeDefined()
+    expect(existsSync(kept!)).toBe(true)
+    rmSync(kept!, { recursive: true, force: true })
   })
 
   it('rejects local-only members before staging anything', async () => {

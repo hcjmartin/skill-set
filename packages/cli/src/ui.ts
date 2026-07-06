@@ -23,6 +23,8 @@ export interface UiOptions {
 export interface Ui {
   readonly json: boolean
   readonly yes: boolean
+  /** True when prompts can be shown to a human without hanging CI/non-TTY callers. */
+  readonly interactive: boolean
   /** Human progress line on stdout; silent in --json mode so stdout stays one JSON object. */
   out(line?: string): void
   /** Warning line on stderr; never silenced. */
@@ -54,6 +56,7 @@ export function createUi(opts: UiOptions): Ui {
   return {
     json: opts.json,
     yes: opts.yes,
+    interactive,
     out(line = '') {
       if (!opts.json) stdout.write(`${line}\n`)
     },

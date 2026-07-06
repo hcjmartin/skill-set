@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
-import { createSetLock, LOCK_SUFFIX, serializeSetLock, type SetLockMember } from '../lock.ts'
+import { createSetLock, LOCK_SUFFIX, serializeSetLock, type SetLock, type SetLockMember } from '../lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { SETS_DIR, setPaths } from '../project.ts'
-import { buildAddInvocation, parseLocator, resolveMember } from '../resolver.ts'
+import { buildAddInvocation, locateMember, parseLocator, resolveMember } from '../resolver.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const SHARE_USAGE = 'skill-set share [<set>] [--manifest <path>] [--output <dir>]'
@@ -15,6 +15,11 @@ const SHARE_DIR = `${SETS_DIR}/_share`
 type ShareInput =
   | { kind: 'set'; name: string; path: string; manifest: Manifest }
   | { kind: 'manifest'; path: string; manifest: Manifest }
+
+interface StagedShare {
+  lock: SetLock
+  staging: string
+}
 
 export async function cmdShare(args: string[], ctx: CommandContext): Promise<CommandResult> {
   const split = splitFlags(args, [], SHARE_USAGE, ['--manifest', '--output'])
@@ -69,28 +74,39 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
   const staged = await stageAndLock(ctx, name, manifest)
   if (!staged.ok) return staged
 
-  mkdirSync(output.data, { recursive: true })
-  const manifestPath = join(output.data, `${name}${MANIFEST_SUFFIX}`)
-  const lockPath = join(output.data, `${name}${LOCK_SUFFIX}`)
-  writeFileSync(manifestPath, serializeManifest(manifest))
-  writeFileSync(lockPath, serializeSetLock(staged.data))
+  const cleanup = await maybeReviewStagedContent(ctx, manifest, staged.data)
+  if (!cleanup.ok) {
+    rmSync(staged.data.staging, { recursive: true, force: true })
+    return cleanup
+  }
 
-  ctx.ui.out(
-    `${ctx.ui.style('green', '✓')} Created shareable skill-set at ${displayPath(ctx.cwd, output.data)} (${plural(manifest.skills.length, 'skill')})`,
-  )
-  ctx.ui.out(ctx.ui.style('dim', 'The lock was generated from remote delivered skill content, not local skill folders.'))
-  ctx.ui.out(ctx.ui.style('dim', 'Publish the manifest and lock together so add can verify the sidecar lock.'))
+  try {
+    mkdirSync(output.data, { recursive: true })
+    const manifestPath = join(output.data, `${name}${MANIFEST_SUFFIX}`)
+    const lockPath = join(output.data, `${name}${LOCK_SUFFIX}`)
+    writeFileSync(manifestPath, serializeManifest(manifest))
+    writeFileSync(lockPath, serializeSetLock(staged.data.lock))
 
-  return {
-    ok: true,
-    data: {
-      name,
-      output: displayPath(ctx.cwd, output.data),
-      manifest: displayPath(ctx.cwd, manifestPath),
-      lock: displayPath(ctx.cwd, lockPath),
-      setHash: staged.data.setHash,
-      members: manifest.skills.length,
-    },
+    ctx.ui.out(
+      `${ctx.ui.style('green', '✓')} Created shareable skill-set at ${displayPath(ctx.cwd, output.data)} (${plural(manifest.skills.length, 'skill')})`,
+    )
+    ctx.ui.out(ctx.ui.style('dim', 'The lock was generated from remote delivered skill content, not local skill folders.'))
+    ctx.ui.out(ctx.ui.style('dim', 'Publish the manifest and lock together so add can verify the sidecar lock.'))
+
+    return {
+      ok: true,
+      data: {
+        name,
+        output: displayPath(ctx.cwd, output.data),
+        manifest: displayPath(ctx.cwd, manifestPath),
+        lock: displayPath(ctx.cwd, lockPath),
+        setHash: staged.data.lock.setHash,
+        members: manifest.skills.length,
+        ...(cleanup.data === true ? {} : { stagingKept: displayPath(ctx.cwd, staged.data.staging) }),
+      },
+    }
+  } finally {
+    if (cleanup.data) rmSync(staged.data.staging, { recursive: true, force: true })
   }
 }
 
@@ -201,37 +217,76 @@ async function promptForOptionalMetadata(ctx: CommandContext, manifest: Manifest
   return parseManifest(serializeManifest(next))
 }
 
-async function stageAndLock(ctx: CommandContext, name: string, manifest: Manifest): Promise<Result<ReturnType<typeof createSetLock>>> {
+async function stageAndLock(ctx: CommandContext, name: string, manifest: Manifest): Promise<Result<StagedShare>> {
   const staging = createStagingProject(ctx.cwd)
   if (!staging.ok) return staging
-  try {
-    const members: Record<string, SetLockMember> = {}
-    const failed: Array<{ locator: string; code: string; message: string }> = []
-    for (const locator of manifest.skills) {
-      ctx.ui.out(ctx.ui.style('dim', `staging: ${formatInvocation(buildAddInvocation(locator), ctx.passthrough)}`))
-      const resolved = await resolveMember(locator, {
-        cwd: staging.data,
-        runner: ctx.runner,
-        extraArgs: ctx.passthrough,
-        capture: ctx.ui.json,
-      })
-      if (resolved.ok) members[locator] = resolved.data
-      else failed.push({ locator, code: resolved.error.code, message: resolved.error.message })
-    }
-    if (failed.length > 0) {
-      return {
-        ok: false,
-        error: new SkillSetError(
-          ErrorCodes.INSTALL_FAILED,
-          `Cannot share ${JSON.stringify(name)} — ${failed.length} of ${plural(manifest.skills.length, 'member skill')} failed to resolve in a clean staging project:\n  - ${failed.map((f) => `${f.locator}: ${f.message}`).join('\n  - ')}`,
-          { hint: 'Fix the failing remote skill locators and try again.', data: { name, failed } },
-        ),
-      }
-    }
-    return { ok: true, data: createSetLock(name, manifest.version, members) }
-  } finally {
-    rmSync(staging.data, { recursive: true, force: true })
+  const members: Record<string, SetLockMember> = {}
+  const failed: Array<{ locator: string; code: string; message: string }> = []
+  for (const locator of manifest.skills) {
+    ctx.ui.out(ctx.ui.style('dim', `staging: ${formatInvocation(buildAddInvocation(locator), ctx.passthrough)}`))
+    const resolved = await resolveMember(locator, {
+      cwd: staging.data,
+      runner: ctx.runner,
+      extraArgs: ctx.passthrough,
+      capture: ctx.ui.json,
+    })
+    if (resolved.ok) members[locator] = resolved.data
+    else failed.push({ locator, code: resolved.error.code, message: resolved.error.message })
   }
+  if (failed.length > 0) {
+    rmSync(staging.data, { recursive: true, force: true })
+    return {
+      ok: false,
+      error: new SkillSetError(
+        ErrorCodes.INSTALL_FAILED,
+        `Cannot share ${JSON.stringify(name)} — ${failed.length} of ${plural(manifest.skills.length, 'member skill')} failed to resolve in a clean staging project:\n  - ${failed.map((f) => `${f.locator}: ${f.message}`).join('\n  - ')}`,
+        { hint: 'Fix the failing remote skill locators and try again.', data: { name, failed } },
+      ),
+    }
+  }
+  return { ok: true, data: { lock: createSetLock(name, manifest.version, members), staging: staging.data } }
+}
+
+async function maybeReviewStagedContent(ctx: CommandContext, manifest: Manifest, staged: StagedShare): Promise<Result<boolean>> {
+  const mismatches = localContentMismatches(ctx.cwd, manifest, staged.lock)
+  if (mismatches.length > 0) {
+    ctx.ui.out(
+      ctx.ui.style(
+        'yellow',
+        `Notice: ${plural(mismatches.length, 'installed local skill')} ${mismatches.length === 1 ? 'differs' : 'differ'} from the fetched remote content used for this share lock:`,
+      ),
+    )
+    for (const mismatch of mismatches) ctx.ui.out(`  - ${mismatch.locator} (skill ${mismatch.skill})`)
+    ctx.ui.out(ctx.ui.style('dim', 'The share lock will use the fetched remote content.'))
+  }
+
+  if (!ctx.ui.interactive || ctx.ui.yes || ctx.ui.json) return { ok: true, data: true }
+  ctx.ui.out('Staged skill contents used for this share lock are at:')
+  ctx.ui.out(ctx.ui.style('dim', `  ${join(staged.staging, '.agents', 'skills')}`))
+  ctx.ui.out('Review them now if you want to inspect exactly what was hashed.')
+  const cleanup = await ctx.ui.confirm('Delete the staged files now?', { optional: true })
+  if (!cleanup.ok) return cleanup
+  if (!cleanup.data) {
+    ctx.ui.out(ctx.ui.style('dim', `Staged files kept at ${staged.staging}`))
+    return { ok: true, data: false }
+  }
+  return { ok: true, data: true }
+}
+
+function localContentMismatches(
+  cwd: string,
+  manifest: Manifest,
+  lock: SetLock,
+): Array<{ locator: string; skill: string }> {
+  const mismatches: Array<{ locator: string; skill: string }> = []
+  for (const locator of manifest.skills) {
+    const staged = lock.skills[locator]
+    if (staged === undefined) continue
+    const local = locateMember(locator, { cwd })
+    if (!local.ok) continue
+    if (local.data.computedHash !== staged.computedHash) mismatches.push({ locator, skill: local.data.skill })
+  }
+  return mismatches
 }
 
 function createStagingProject(cwd: string): Result<string> {

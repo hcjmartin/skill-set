@@ -57,6 +57,15 @@ A skill-set is shareable as **a URL to its manifest** — any HTTPS location ser
 3. Writing it into the project as `<name>.skill-set.json`, with the filename derived from the manifest's `name`. If a set file of that name already exists, the implementation MUST fail rather than silently overwrite.
 4. Proceeding with normal installation, presenting the member/source summary first.
 
+### Receipt-time verification
+
+The manifest carries locators, never hashes (§1), so acquisition alone is trust-on-first-use: the first install resolves whatever the locators currently point at. Two optional, composable mechanisms let a recipient verify received content against the author's resolved reality (§5) before it is used:
+
+- **Sidecar lock.** An author MAY publish the set-lock beside the manifest, at the same location with the `.skill-set.json` suffix replaced by `.skill-set.lock.json`. Implementations SHOULD attempt to fetch the sidecar under the same rules as the manifest fetch, MUST treat its absence as non-fatal, and — when present — MUST validate it as a set-lock (§5, including name agreement with the manifest) and verify each installed member's content hash (§6) against it. Because the sidecar is same-origin with the manifest, it defends against upstream source tampering, not compromise of the host serving the manifest.
+- **Out-of-band hash.** A share MAY carry the expected rollup `setHash` (§5) appended to the manifest URL as a fragment: `<manifest-url>#sha256=<64-lowercase-hex>`. Fragments are not sent to servers; implementations MUST strip the fragment before fetching, recompute the rollup from the installed content, and compare. Implementations MAY also accept the same value out-of-band by other means (e.g. a command-line option). The value SHOULD be algorithm-prefixed; an unrecognised algorithm MUST be rejected, never ignored. Shared through a second channel (a message, a README), the hash also defends against manifest-host compromise.
+
+When both are given, the sidecar's `setHash` MUST equal the out-of-band value before the sidecar's per-member hashes are trusted — a sidecar that contradicts the out-of-band hash is itself suspect. On any verification failure the implementation MUST NOT keep the received content: installed members and written set files are removed, and the failure names what mismatched. Verification proves integrity — that the recipient received exactly what the author locked — not that the content is safe; reviewing third-party sets before use remains the operator's responsibility.
+
 ## 4. Resolution & installation
 
 Installing a set resolves each member locator to an installed skill folder (canonical location: `.agents/skills/<skill-name>/`). Members are installed as ordinary skills — the set does not wrap or relocate them. Requirements:

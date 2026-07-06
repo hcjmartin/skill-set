@@ -1,0 +1,30 @@
+{
+  "name": "@skill-set/site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Documentation site for skill-set, served at https://skill-set.md.",
+  "type": "module",
+  "author": "Harry Martin <hcjmartin@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://skill-set.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hcjmartin/skill-set.git",
+    "directory": "packages/site"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "deploy": "astro build && npx wrangler@4 deploy"
+  },
+  "dependencies": {
+    "astro": "^5.18.0"
+  },
+  "devDependencies": {
+    "@astrojs/markdown-remark": "^6.3.11"
+  }
+}

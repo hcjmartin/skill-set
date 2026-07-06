@@ -52,7 +52,7 @@ Trust is layered, and each layer has a defined job:
 
 1. **Before fetching**: `add` only reaches out to recognised skill-set hosts without asking; any other host requires an explicit confirmation first. Redirects cannot escape to unrecognised hosts.
 2. **Before anything is shown or written**: the fetched manifest must pass schema validation. Validation errors report the problem structurally and never repeat fetched content back into your terminal.
-3. **At receipt (optional, recommended for third-party sets)**: if the share URL carries a hash fragment (`…skill-set.json#sha256=<hash>`) or you pass `--hash`, and/or the author published their lock beside the manifest, `add` verifies the installed bytes against them. Content that does not match what the share promised is not kept — the members and set files are removed and the command fails naming the mismatch.
+3. **At receipt (optional, recommended for third-party sets)**: if the share URL carries a hash fragment (`…skill-set.json#sha256=<hash>`) or you pass `--hash`, and/or the author published their lock beside the manifest, `add` verifies the installed bytes against them. Content that does not match the provided hash or the published lock is not kept — the members and set files are removed and the command fails.
 4. **After that, over time**: your committed lock plus `verify --frozen` (the CI default) catches any later drift, byte-exactly, member by member.
 
 Skill resolution itself is delegated to the pinned `skills@1.5` CLI with prompts suppressed — the trust decisions all happen in the layers above, not in the delegated fetch.

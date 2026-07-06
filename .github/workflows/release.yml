@@ -40,6 +40,9 @@ jobs:
       # changesets delegates publish to npm; OIDC trusted publishing needs npm >= 11.5.1.
       - run: npm install -g npm@11.5.1
       - run: pnpm run build
+      - name: Check before publish
+        if: vars.NPM_TRUSTED_PUBLISHING == 'enabled'
+        run: pnpm run check
       - name: Version PR or publish
         if: vars.NPM_TRUSTED_PUBLISHING == 'enabled'
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0

@@ -8,7 +8,8 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "schema"
   ],
   "keywords": [
     "agent",
@@ -34,6 +35,7 @@
   },
   "scripts": {
     "build": "tsdown",
+    "prepack": "node scripts/sync-schemas.mjs",
     "dev": "tsdown --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

@@ -4,6 +4,8 @@ CHANGELOG.md
 node_modules/
 dist/
 coverage/
+# generated from spec/ on prepack
+packages/cli/schema/
 *.tsbuildinfo
 .DS_Store
 .claude

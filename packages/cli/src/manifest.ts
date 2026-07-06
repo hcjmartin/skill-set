@@ -30,7 +30,7 @@ const manifestSchema = z.strictObject({
 export type Manifest = z.infer<typeof manifestSchema>
 
 // Schema versions this implementation can validate (spec §2.5); the URL path segment is the id.
-const SUPPORTED_SCHEMA_VERSIONS = new Set(['draft'])
+export const SUPPORTED_SCHEMA_VERSIONS = new Set(['draft'])
 
 export function parseManifest(text: string, opts?: { filename?: string }): Result<Manifest> {
   const context = opts?.filename ?? 'Manifest'

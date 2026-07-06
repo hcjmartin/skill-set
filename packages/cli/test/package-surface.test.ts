@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import pkg from '../package.json' with { type: 'json' }
+import { SUPPORTED_SCHEMA_VERSIONS } from '../src/manifest.ts'
 import { SKILLS_PIN } from '../src/resolver.ts'
 import { VERSION } from '../src/run.ts'
 import { runCommand } from '../src/spawn.ts'
@@ -16,10 +17,25 @@ const binPath = join(pkgDir, 'bin', 'cli.mjs')
 describe('package surface pins', () => {
   it('ships a single skill-set bin and only built files', () => {
     expect(pkg.bin).toEqual({ 'skill-set': 'bin/cli.mjs' })
-    expect(pkg.files).toEqual(['bin', 'dist'])
+    expect(pkg.files).toEqual(['bin', 'dist', 'schema'])
     expect(pkg.type).toBe('module')
     expect(pkg.publishConfig).toEqual({ access: 'public' })
     expect(pkg.name).toBe('@skill-set/cli')
+    // Every pack/publish refreshes schema/ from spec/ so releases carry their exact schemas.
+    expect(pkg.scripts.prepack).toBe('node scripts/sync-schemas.mjs')
+  })
+
+  it('ships exactly the supported schema versions, byte-identically', async () => {
+    const sync = await runCommand(process.execPath, [join(pkgDir, 'scripts', 'sync-schemas.mjs')], { capture: true })
+    expect(sync.ok && sync.data.exitCode === 0).toBe(true)
+    // The rebuilt schema/ tree carries one directory per supported version — no strays.
+    expect(readdirSync(join(pkgDir, 'schema')).sort()).toEqual([...SUPPORTED_SCHEMA_VERSIONS].sort())
+    const specDraft = join(pkgDir, '..', '..', 'spec', 'draft')
+    for (const file of ['skill-set.schema.json', 'skill-set.lock.schema.json']) {
+      expect(readFileSync(join(pkgDir, 'schema', 'draft', file), 'utf8')).toBe(
+        readFileSync(join(specDraft, file), 'utf8'),
+      )
+    }
   })
 
   it('exposes no programmatic entry points', () => {

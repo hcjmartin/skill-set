@@ -1,0 +1,58 @@
+name: Release
+
+# Do not rename this file or the "release" environment, npm's Trusted Publisher configuration references both by name
+
+# Release automation, via changesets:
+# - On push to main: opens or updates a "Version Packages" PR (version bumps + changelogs from pending changesets)
+# - On merge of Version Packages PR: publishes to npm via OIDC trusted publishing, with provenance
+#
+# Publishes: packages/cli as @skill-set/cli
+# Does not cover: packages/site, packages/skills-sets
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'hcjmartin/skill-set'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # changesets/action pushes the version branch
+      pull-requests: write # and opens/updates the Version PR
+      id-token: write # npm OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # changesets delegates publish to npm; OIDC trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@11.5.1
+      - run: pnpm run build
+      - name: Check before publish
+        if: vars.NPM_TRUSTED_PUBLISHING == 'enabled'
+        run: pnpm run check
+      - name: Version PR or publish
+        if: vars.NPM_TRUSTED_PUBLISHING == 'enabled'
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          publish: pnpm changeset publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+      - name: Version PR only (publishing not yet configured)
+        if: vars.NPM_TRUSTED_PUBLISHING != 'enabled'
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

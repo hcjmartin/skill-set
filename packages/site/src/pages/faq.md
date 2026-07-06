@@ -46,6 +46,19 @@ Two related exit codes matter for pipelines: `2` means the verify could not run 
 
 Yes, if you want reproducibility or frozen verify — that is its purpose. The lock is deterministic (sorted keys, no timestamps; identical inputs produce identical bytes), so diffs are small and merges stay clean. Without a lock, `install` still works from the manifest alone; you just lose byte-exact verification and idempotent skips.
 
+## What is verified, and when?
+
+Trust is layered, and each layer has a defined job:
+
+1. **Before fetching**: `add` only reaches out to recognised skill-set hosts without asking; any other host requires an explicit confirmation first. Redirects cannot escape to unrecognised hosts.
+2. **Before anything is shown or written**: the fetched manifest must pass schema validation. Validation errors report the problem structurally and never repeat fetched content back into your terminal.
+3. **At receipt (optional, recommended for third-party sets)**: if the share URL carries a hash fragment (`…skill-set.json#sha256=<hash>`) or you pass `--hash`, and/or the author published their lock beside the manifest, `add` verifies the installed bytes against them. Content that does not match what the share promised is not kept — the members and set files are removed and the command fails naming the mismatch.
+4. **After that, over time**: your committed lock plus `verify --frozen` (the CI default) catches any later drift, byte-exactly, member by member.
+
+Skill resolution itself is delegated to the pinned `skills@1.5` CLI with prompts suppressed — the trust decisions all happen in the layers above, not in the delegated fetch.
+
+One boundary to be clear about: hashes prove **integrity**, not **safety**. A verified set is exactly what its author locked — which says nothing about whether that content is a good idea to run. Review third-party sets (or use a skill scanner) before installing them, the same way you would vet any dependency.
+
 ## How does skill-set relate to the skills CLI?
 
 It is a companion, not a fork. The skills CLI resolves and installs individual skills; skill-set adds the set layer — named manifests, sharing by URL, locks, and verification. Every member resolution shells out to the pinned upstream (`npx skills@1.5`), and arguments after `--` pass through to it verbatim. Locators in a manifest are whatever `npx skills add` accepts.

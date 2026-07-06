@@ -51,7 +51,7 @@ The site lives on a Cloudflare account dedicated to this project, so its CI toke
    - `CLOUDFLARE_ACCOUNT_ID`
 
    The deploy workflow (`.github/workflows/deploy-site.yml`) runs on pushes to `main` that touch `packages/site/` or `spec/`, and on manual dispatch. It skips deployment cleanly while the secrets are absent, and verifies the built schema endpoints are byte-identical to `spec/draft/` before deploying.
-4. **First deploy, then bind the domain.** The first successful deploy creates the `skill-set-site` Worker (a fresh account must pick its `workers.dev` subdomain first: Workers & Pages → your subdomain). Bind the canonical domain in the dashboard: Workers & Pages → `skill-set-site` → Settings → Domains & Routes → Add → Custom domain → `skill-set.md`. The binding persists across deploys. Do not uncomment the `routes` entry in `wrangler.jsonc` unless the token also gets Zone → Workers Routes → Edit on `skill-set.md` — with it present, every deploy reconciles the binding through the zone API.
+4. **First deploy, then bind the domain.** The first successful deploy creates the `skill-set-site` Worker (a fresh account must pick its `workers.dev` subdomain first: Workers & Pages → your subdomain). Bind the canonical domain in the dashboard: Workers & Pages → `skill-set-site` → Settings → Domains & Routes → Add → Custom domain → `skill-set.md`. The binding persists across deploys. Alternatively a `"routes": [{ "pattern": "skill-set.md", "custom_domain": true }]` entry in `wrangler.jsonc` binds it on deploy, but then every deploy reconciles the binding through the zone API and the token also needs Zone → Workers Routes → Edit on `skill-set.md`.
 
 ## Structure
 

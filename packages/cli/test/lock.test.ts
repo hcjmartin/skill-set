@@ -99,7 +99,7 @@ describe('parseSkillsLock — upstream adapter', () => {
     version: 1,
     skills: {
       'find-skills': {
-        source: 'vercel-labs/skills',
+        source: 'vercel-labs/agent-skills',
         ref: 'main',
         sourceType: 'github',
         skillPath: 'skills/find-skills/SKILL.md',

@@ -227,6 +227,21 @@ describe('authoring round-trip: init → install → lock → build → verify �
     await cli(other, otherFake, ['install', 'p', '--', '--verbose'])
     expect(otherFake.calls[0]).toEqual(['npx', '-y', 'skills@1.5', 'add', 'hcjmartin/x-repo', '--skill', 'x', '--yes', '--verbose'])
   })
+
+  it('our own flags after -- forward to upstream instead of switching our modes', async () => {
+    const other = project()
+    const otherFake = fakeSkills(other)
+    await cli(other, otherFake, ['init', 'q', 'hcjmartin/y-repo@y'])
+    const { code, out } = await cli(other, otherFake, ['install', 'q', '--', '--json', '--help'])
+    expect(code).toBe(0)
+    // Human install output: no help screen, no JSON envelope — the flags belong to the child.
+    expect(out).toContain('Installing local skill-set "q"')
+    expect(out).not.toContain('Usage: skill-set')
+    expect(out.trimStart().startsWith('{')).toBe(false)
+    expect(otherFake.calls[0]).toEqual([
+      'npx', '-y', 'skills@1.5', 'add', 'hcjmartin/y-repo', '--skill', 'y', '--yes', '--json', '--help',
+    ])
+  })
 })
 
 describe('cross-set conflicts', () => {

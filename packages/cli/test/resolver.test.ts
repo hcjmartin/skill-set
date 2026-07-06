@@ -17,11 +17,11 @@ const TABLE: Array<{
     command: `npx -y skills@${SKILLS_PIN} add hcjmartin/skills-repo --skill skill-creator --yes`,
   },
   {
-    locator: 'vercel-labs/skills@web-design-guidelines#v2.1.0',
-    source: 'vercel-labs/skills',
+    locator: 'vercel-labs/agent-skills@web-design-guidelines#v2.1.0',
+    source: 'vercel-labs/agent-skills',
     skill: 'web-design-guidelines',
     ref: 'v2.1.0',
-    command: `npx -y skills@${SKILLS_PIN} add vercel-labs/skills#v2.1.0 --skill web-design-guidelines --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add vercel-labs/agent-skills#v2.1.0 --skill web-design-guidelines --yes`,
   },
   {
     locator: 'https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5',

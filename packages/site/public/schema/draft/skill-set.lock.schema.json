@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skill-set.md/schema/draft/skill-set.lock.schema.json",
+  "title": "skill-set lock",
+  "description": "Generated lock recording the exact content each member of a skill-set resolved to.\nhttps://skill-set.md",
+  "type": "object",
+  "required": ["version", "name", "setVersion", "setHash", "skills"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Lock format version. This schema defines version 1; readers fail loudly on unrecognized values.",
+      "const": 1
+    },
+    "name": {
+      "description": "Name of the skill-set this lock belongs to; equals the manifest name and the filename stem (<name>.skill-set.lock.json).",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "setVersion": {
+      "description": "The manifest version at the time the lock was generated.\nhttps://semver.org",
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "setHash": {
+      "description": "Rollup SHA-256 over the sorted members' locators and content hashes, lowercase hex.",
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "skills": {
+      "description": "One entry per member, keyed by the manifest locator string.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "description": "Resolution record for one member skill.",
+        "type": "object",
+        "required": ["skill", "computedHash"],
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "description": "The installed skill name (directory name under the skills root).",
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "minLength": 1
+          },
+          "computedHash": {
+            "description": "Member content hash (SHA-256 of the installed folder per the spec's recipe), lowercase hex.",
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceType": {
+            "description": "Resolver-reported source kind (open vocabulary, e.g. github, git, well-known).",
+            "type": "string",
+            "minLength": 1
+          },
+          "ref": {
+            "description": "Resolver-reported resolved ref (tag or commit), when the source has one.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

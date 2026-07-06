@@ -42,24 +42,16 @@ For a manual deploy, `wrangler` prompts for browser login, or reads `CLOUDFLARE_
 
 ## Deploying — one-time Cloudflare setup
 
-1. **Add the zones.** Add `skill-set.md` and `skill-sets.md` as zones on the Cloudflare account and point their nameservers at Cloudflare.
-2. **Create an API token.** Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template, scoped to the account (and optionally the two zones). The account ID is on any zone's overview page.
+The site lives on a Cloudflare account dedicated to this project, so its CI token cannot touch unrelated Workers. `skill-sets.md` is **not** part of this site: it is reserved for the skill-sets directory, a separate project on its own account with its own deployment. It is never a redirect or alias for `skill-set.md` (the CLI's `ALLOWED_HOSTS` lists both because the directory will serve manifests).
+
+1. **Add the zone.** Add `skill-set.md` as a zone on the account and point its nameservers at Cloudflare (nic.md applies nameserver changes on its hourly registry update).
+2. **Create an API token.** Cloudflare dashboard → My Profile → API Tokens → Create Token → Custom token with a single permission: Account → Workers Scripts → Edit, scoped to the account. The deploy needs nothing zone-level; the domain is bound once in the dashboard (step 4). The account ID is on the zone's overview page.
 3. **Set the GitHub secrets.** In the `hcjmartin/skill-set` repo settings, add:
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
 
    The deploy workflow (`.github/workflows/deploy-site.yml`) runs on pushes to `main` that touch `packages/site/` or `spec/`, and on manual dispatch. It skips deployment cleanly while the secrets are absent, and verifies the built schema endpoints are byte-identical to `spec/draft/` before deploying.
-4. **First deploy, then bind the domain.** The first successful deploy creates the `skill-set-site` Worker. Bind the canonical domain either by uncommenting the `routes` entry in `wrangler.jsonc` (subsequent deploys attach it) or in the dashboard: Workers & Pages → `skill-set-site` → Settings → Domains & Routes → Add → Custom domain → `skill-set.md`.
-5. **Redirect the alias domain.** `skill-sets.md` must 301 to `skill-set.md`, preserving path and query, and never serve canonical URLs. This is Cloudflare zone config, not site code — on the `skill-sets.md` zone:
-   - Rules → Redirect Rules → Create rule
-   - When incoming requests match: All incoming requests (or expression `true`)
-   - Then: Dynamic redirect, status `301`, preserve query string, expression:
-
-     ```
-     concat("https://skill-set.md", http.request.uri.path)
-     ```
-
-   The zone needs a proxied DNS record for the apex (e.g. `AAAA @ 100::`) so requests reach Cloudflare's edge for the redirect to fire; add the same for `www` if desired.
+4. **First deploy, then bind the domain.** The first successful deploy creates the `skill-set-site` Worker (a fresh account must pick its `workers.dev` subdomain first: Workers & Pages → your subdomain). Bind the canonical domain in the dashboard: Workers & Pages → `skill-set-site` → Settings → Domains & Routes → Add → Custom domain → `skill-set.md`. The binding persists across deploys. Do not uncomment the `routes` entry in `wrangler.jsonc` unless the token also gets Zone → Workers Routes → Edit on `skill-set.md` — with it present, every deploy reconciles the binding through the zone API.
 
 ## Structure
 

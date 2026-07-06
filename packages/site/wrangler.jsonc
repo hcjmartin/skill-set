@@ -1,5 +1,3 @@
-// Cloudflare Workers static-assets config for the skill-set documentation site.
-// Deploy with `npx wrangler@4 deploy` after `pnpm build` (see README.md).
 {
   "name": "skill-set-site",
   "compatibility_date": "2026-06-01",
@@ -7,7 +5,4 @@
     "directory": "./dist",
     "not_found_handling": "404-page"
   }
-  // Once the skill-set.md zone exists on the Cloudflare account, uncomment to bind
-  // the custom domain on deploy (or attach it in the dashboard instead):
-  // ,"routes": [{ "pattern": "skill-set.md", "custom_domain": true }]
 }

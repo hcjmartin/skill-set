@@ -1,5 +1,5 @@
 // @ts-check
-import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { rehypeHeadingIds } from '@astrojs/markdown-remark'
@@ -7,7 +7,6 @@ import { defineConfig } from 'astro/config'
 
 const SPEC_ROOT = fileURLToPath(new URL('../../spec', import.meta.url))
 const PUBLIC_SCHEMA_ROOT = fileURLToPath(new URL('./public/schema', import.meta.url))
-const CODEGEN_DIR = fileURLToPath(new URL('./.astro', import.meta.url))
 const REPO_URL = 'https://github.com/hcjmartin/skill-set'
 
 /**
@@ -32,20 +31,6 @@ function syncSpecSchemas() {
         }
       },
     },
-  }
-}
-
-/**
- * Removes Astro's generated .astro/ codegen directory once a build or the dev server
- * finishes. The workspace lints from the repo root and the generated .d.ts files do not
- * pass its rules; the directory is regenerated from scratch on every astro run, so
- * nothing is lost. Run `astro sync` for editor types when working on the site.
- */
-function cleanCodegen() {
-  const clean = () => rmSync(CODEGEN_DIR, { recursive: true, force: true })
-  return {
-    name: 'clean-codegen',
-    hooks: { 'astro:build:done': clean, 'astro:server:done': clean },
   }
 }
 
@@ -101,7 +86,7 @@ function anchorHeadings() {
 
 export default defineConfig({
   site: 'https://skill-set.md',
-  integrations: [syncSpecSchemas(), cleanCodegen()],
+  integrations: [syncSpecSchemas()],
   markdown: {
     shikiConfig: { theme: 'github-dark-default' },
     // Astro injects heading ids after user plugins; run its id plugin first so

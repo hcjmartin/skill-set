@@ -1,6 +1,7 @@
 {
   "name": "skills-sets",
   "version": "0.0.1",
+  "private": true,
   "description": "Define, share, and install named sets of agent skills. Pre-release placeholder for the skill-set CLI and manifest format.",
   "type": "module",
   "bin": {

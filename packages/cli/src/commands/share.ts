@@ -90,8 +90,13 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
     ctx.ui.out(
       `${ctx.ui.style('green', '✓')} Created shareable skill-set at ${displayPath(ctx.cwd, output.data)} (${plural(manifest.skills.length, 'skill')})`,
     )
-    ctx.ui.out(ctx.ui.style('dim', 'The lock was generated from remote delivered skill content, not local skill folders.'))
-    ctx.ui.out(ctx.ui.style('dim', 'Publish the manifest and lock together so add can verify the sidecar lock.'))
+    ctx.ui.out(ctx.ui.style('dim', 'The lock was generated from the live skills, not your local files.'))
+    ctx.ui.out(
+      ctx.ui.style(
+        'dim',
+        `Publish the manifest and lock together, or share a validating install command: npx @skill-set/cli add https://<skill-set-url>#sha256=${staged.data.lock.setHash}`,
+      ),
+    )
 
     return {
       ok: true,

@@ -576,7 +576,8 @@ describe('share', () => {
     const { code, out } = await cli(cwd, fake, ['share', 'portable', '--yes'])
     expect(code).toBe(0)
     expect(out).toContain('Created shareable skill-set at .agents/skills/skill-sets/_share/portable')
-    expect(out).toContain('remote delivered skill content, not local skill folders')
+    expect(out).toContain('The lock was generated from the live skills, not your local files.')
+    expect(out).toContain('share a validating install command: npx @skill-set/cli add https://<skill-set-url>#sha256=')
     expect(out).toContain('Notice: 1 installed local skill differs from the fetched remote content used for this share lock')
     expect(out).toContain('hcjmartin/alpha-repo@alpha (skill alpha)')
 

@@ -8,6 +8,7 @@ import { cmdInit } from './commands/init.ts'
 import { cmdInstall } from './commands/install.ts'
 import { cmdLock } from './commands/lock.ts'
 import { cmdRemove } from './commands/remove.ts'
+import { cmdShare } from './commands/share.ts'
 import { cmdUpdate } from './commands/update.ts'
 import { cmdVerify } from './commands/verify.ts'
 import type { CommandContext, CommandResult } from './commands/context.ts'
@@ -26,6 +27,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   install: { usage: 'install <set>', describe: 'Install members, skipping ones the lock already satisfies', handler: cmdInstall },
   build: { usage: 'build [<set>] [--lock]', describe: 'Regenerate SKILL-SET.md files and the skill-sets.json index', handler: cmdBuild },
   lock: { usage: 'lock <set>', describe: "Record each member's installed content in a set-lock", handler: cmdLock },
+  share: { usage: 'share [<set>] [--manifest <path>] [--output <dir>]', describe: 'Export a shareable manifest and lock', handler: cmdShare },
   verify: { usage: 'verify <set> [--frozen]', describe: 'Check installed members against the set (frozen: byte-exact)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
@@ -65,6 +67,7 @@ export interface RunOverrides {
   ci?: boolean
   interactive?: boolean
   confirmAnswers?: boolean[]
+  promptAnswers?: string[]
   stdout?: Writer
   stderr?: Writer
 }
@@ -99,7 +102,15 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
   }
   const [verb, ...args] = rest
 
-  const ui = createUi({ json, yes, interactive: overrides.interactive, confirmAnswers: overrides.confirmAnswers, stdout, stderr })
+  const ui = createUi({
+    json,
+    yes,
+    interactive: overrides.interactive,
+    confirmAnswers: overrides.confirmAnswers,
+    promptAnswers: overrides.promptAnswers,
+    stdout,
+    stderr,
+  })
   const ctx: CommandContext = {
     cwd: overrides.cwd ?? process.cwd(),
     ui,

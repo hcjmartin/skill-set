@@ -14,6 +14,8 @@ export interface UiOptions {
   interactive?: boolean
   /** Scripted confirm answers for tests, consumed in order before the refusal logic. */
   confirmAnswers?: boolean[]
+  /** Scripted text prompt answers for tests, consumed in order before the refusal logic. */
+  promptAnswers?: string[]
   stdout?: Writer
   stderr?: Writer
 }
@@ -21,6 +23,8 @@ export interface UiOptions {
 export interface Ui {
   readonly json: boolean
   readonly yes: boolean
+  /** True when prompts can be shown to a human without hanging CI/non-TTY callers. */
+  readonly interactive: boolean
   /** Human progress line on stdout; silent in --json mode so stdout stays one JSON object. */
   out(line?: string): void
   /** Warning line on stderr; never silenced. */
@@ -33,6 +37,11 @@ export interface Ui {
    * unless the prompt is `optional` (a convenience offer), which then resolves false.
    */
   confirm(question: string, opts?: { optional?: boolean }): Promise<Result<boolean>>
+  /**
+   * Asks for free text. Required prompts refuse when no prompt is possible; optional prompts
+   * resolve undefined in non-interactive modes, so commands can offer metadata without blocking.
+   */
+  prompt(question: string, opts?: { optional?: boolean; defaultValue?: string }): Promise<Result<string | undefined>>
 }
 
 export function createUi(opts: UiOptions): Ui {
@@ -42,10 +51,12 @@ export function createUi(opts: UiOptions): Ui {
     opts.interactive ?? (process.stdin.isTTY === true && process.stdout.isTTY === true && !ci.isCI)
   const colors = !opts.json && opts.stdout === undefined && process.stdout.isTTY === true
   const scripted = opts.confirmAnswers === undefined ? undefined : [...opts.confirmAnswers]
+  const scriptedPrompts = opts.promptAnswers === undefined ? undefined : [...opts.promptAnswers]
 
   return {
     json: opts.json,
     yes: opts.yes,
+    interactive,
     out(line = '') {
       if (!opts.json) stdout.write(`${line}\n`)
     },
@@ -72,6 +83,32 @@ export function createUi(opts: UiOptions): Ui {
       try {
         const answer = (await rl.question(`${question} [y/N] `)).trim().toLowerCase()
         return { ok: true, data: answer === 'y' || answer === 'yes' }
+      } finally {
+        rl.close()
+      }
+    },
+    async prompt(question, promptOpts) {
+      if (scriptedPrompts !== undefined && scriptedPrompts.length > 0) {
+        const value = scriptedPrompts.shift()!.trim()
+        return { ok: true, data: value === '' ? promptOpts?.defaultValue : value }
+      }
+      if (opts.yes && promptOpts?.defaultValue !== undefined) return { ok: true, data: promptOpts.defaultValue }
+      if (opts.json || !interactive || opts.yes) {
+        if (promptOpts?.optional === true) return { ok: true, data: promptOpts.defaultValue }
+        return {
+          ok: false,
+          error: new SkillSetError(ErrorCodes.CONFIRM_REQUIRED, `Input required: ${question}`, {
+            hint: 'Pass the value as an argument/flag, or re-run interactively.',
+            data: { question },
+          }),
+        }
+      }
+      const suffix = promptOpts?.defaultValue === undefined ? '' : ` [${promptOpts.defaultValue}]`
+      const rl = createInterface({ input: process.stdin, output: process.stderr })
+      try {
+        const answer = (await rl.question(`${question}${suffix}: `)).trim()
+        if (answer === '') return { ok: true, data: promptOpts?.defaultValue }
+        return { ok: true, data: answer }
       } finally {
         rl.close()
       }

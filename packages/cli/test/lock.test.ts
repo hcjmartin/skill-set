@@ -48,6 +48,24 @@ describe('parseSetLock', () => {
     if (!result.ok) expect(result.error.code).toBe(ErrorCodes.INVALID_LOCK)
   })
 
+  it('names invalid members by position, never echoing locator keys', () => {
+    // Locks can arrive as remote bytes (add's author-lock discovery), so keys must not echo.
+    const result = parseSetLock(
+      JSON.stringify({
+        version: 1,
+        name: 'demo',
+        setVersion: '1.0.0',
+        setHash: HASH_A,
+        skills: { 'SECRET-LOCATOR-KEY': { skill: 'x', computedHash: 'not-hex' } },
+      }),
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.message).not.toContain('SECRET-LOCATOR-KEY')
+      expect(result.error.message).toContain('skills.0.computedHash')
+    }
+  })
+
   it('enforces name↔filename with the lock suffix', () => {
     const result = parseSetLock(lockFixture, { filename: 'other.skill-set.lock.json' })
     expect(result.ok).toBe(false)

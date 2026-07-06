@@ -1,16 +1,21 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
-import { MANIFEST_SUFFIX, parseManifest } from '../manifest.ts'
+import { LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLock } from '../lock.ts'
+import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
-import { parseLocator } from '../resolver.ts'
+import { parseLocator, SKILLS_DIR } from '../resolver.ts'
 import { installSet } from './install.ts'
+import { lockSet } from './lock.ts'
 import { plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
-export const ADD_USAGE = 'skill-set add <url|path>'
+export const ADD_USAGE = 'skill-set add <url|path> [--hash sha256:<hex>]'
 
 /** Spec §3 fetch bounds: at most five redirects, at most 1 MiB of manifest. */
 const MAX_REDIRECTS = 5
 const MAX_BYTES = 1024 * 1024
+
+const HEX64 = /^[a-f0-9]{64}$/
 
 /**
  * Hosts that serve skill-set manifests without a pre-fetch warning. Any other host prompts
@@ -33,12 +38,19 @@ function httpsHost(source: string): string | undefined {
 }
 
 export async function cmdAdd(args: string[], ctx: CommandContext): Promise<CommandResult> {
-  const split = splitFlags(args, [], ADD_USAGE)
+  const split = splitFlags(args, [], ADD_USAGE, ['--hash'])
   if (!split.ok) return split
-  const [source, ...extra] = split.data.positionals
-  if (source === undefined || extra.length > 0) return usageError('add takes exactly one manifest URL or path', ADD_USAGE)
+  const [rawSource, ...extra] = split.data.positionals
+  if (rawSource === undefined || extra.length > 0) return usageError('add takes exactly one manifest URL or path', ADD_USAGE)
+
+  // The pinned hash comes from --hash and/or a #sha256= URL fragment; the fragment is a
+  // trust anchor, not part of the location, so it is stripped before any fetch or record.
+  const pin = resolvePinnedHash(rawSource, split.data.values.get('--hash'))
+  if (!pin.ok) return pin
+  const { source, hash } = pin.data
 
   ctx.ui.out(`Adding skill-set from ${source}...`)
+  if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', 'content will be verified against the provided sha256 hash'))
 
   // Unrecognised hosts are confirmed before any bytes are fetched; a declined or
   // unanswerable prompt aborts with nothing fetched.
@@ -84,11 +96,61 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     }
   }
 
+  // Where the author's set-lock would sit: the manifest location with its suffix swapped,
+  // mirroring the on-disk sidecar naming — same host, so no second host confirmation.
+  const sidecarAt = source.endsWith(MANIFEST_SUFFIX)
+    ? `${source.slice(0, -MANIFEST_SUFFIX.length)}${LOCK_SUFFIX}`
+    : undefined
+
   if (ctx.dryRun) {
     ctx.ui.out(ctx.ui.style('dim', `would write: ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`))
     ctx.ui.out(ctx.ui.style('dim', `would install: ${manifest.data.skills.join(', ')}`))
+    if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', `would verify: set hash against sha256:${hash}`))
+    if (sidecarAt !== undefined) ctx.ui.out(ctx.ui.style('dim', `would verify: installed content against the author lock at ${sidecarAt}, if published`))
     ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills installed`)
-    return { ok: true, data: { name, dryRun: true, wouldInstall: manifest.data.skills } }
+    return {
+      ok: true,
+      data: {
+        name,
+        dryRun: true,
+        wouldInstall: manifest.data.skills,
+        ...(hash === undefined && sidecarAt === undefined
+          ? {}
+          : { wouldVerify: { ...(hash === undefined ? {} : { hash }), ...(sidecarAt === undefined ? {} : { authorLock: sidecarAt }) } }),
+      },
+    }
+  }
+
+  const sidecar = await loadSidecar(sidecarAt, name, ctx)
+  if (!sidecar.ok) return sidecar
+  if (sidecarAt !== undefined) {
+    ctx.ui.out(
+      ctx.ui.style(
+        'dim',
+        sidecar.data === undefined
+          ? 'no author lock published for this set'
+          : 'author lock found — installed content will be verified against it',
+      ),
+    )
+  }
+
+  // A published lock that disagrees with the out-of-band hash is itself suspect: refuse it
+  // before trusting its per-member values, and before anything is installed or written.
+  if (sidecar.data !== undefined && hash !== undefined) {
+    if (sidecar.data.lock.setHash !== hash) {
+      return {
+        ok: false,
+        error: new SkillSetError(
+          ErrorCodes.RECEIPT_MISMATCH,
+          `The published lock for ${JSON.stringify(name)} does not match the provided hash — the lock records set hash ${sidecar.data.lock.setHash}, but sha256:${hash} was provided. Nothing was installed, no files changed.`,
+          {
+            hint: 'Re-check the share link and the pinned hash with the set author.',
+            data: { name, verifiedAgainst: 'both', pinned: hash, lockSetHash: sidecar.data.lock.setHash },
+          },
+        ),
+      }
+    }
+    ctx.ui.out(ctx.ui.style('dim', 'author lock matches the pinned sha256 hash'))
   }
 
   const confirmed = await ctx.ui.confirm(`Add ${JSON.stringify(name)} and install skills?`)
@@ -103,8 +165,18 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   writeFileSync(paths.manifest, text.data)
   ctx.ui.out(`${ctx.ui.style('green', '✓')} Wrote ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`)
 
+  // Snapshot for verify-then-rollback: a rollback removes only folders absent here.
+  const preFolders = listSkillFolders(ctx.cwd)
+
   const install = await installSet(ctx, name)
   if (!install.ok) return install
+
+  let verified: 'sidecar' | 'hash' | 'both' | null = null
+  if (sidecar.data !== undefined || hash !== undefined) {
+    const outcome = verifyReceipt(ctx, manifest.data, sidecar.data, hash, preFolders)
+    if (!outcome.ok) return outcome
+    verified = outcome.data
+  }
 
   const lock = loadLockIfPresent(ctx.cwd, name)
   if (!lock.ok) return lock
@@ -114,7 +186,195 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const index = writeIndex(ctx.cwd, origin)
   if (!index.ok) return index
 
-  return { ok: true, data: { name, added: true, install: install.data } }
+  return { ok: true, data: { name, added: true, verified, install: install.data } }
+}
+
+/**
+ * Post-install receipt verification: recompute every member's installed content hash, compare
+ * against the author lock and/or the pinned rollup, and either adopt/write the set-lock or
+ * roll this add back entirely. Returns which trust source verified.
+ */
+function verifyReceipt(
+  ctx: CommandContext,
+  manifest: Manifest,
+  sidecar: { lock: SetLock; text: string } | undefined,
+  hash: string | undefined,
+  preFolders: ReadonlySet<string>,
+): Result<'sidecar' | 'hash' | 'both'> {
+  const name = manifest.name
+  const members = manifest.skills
+  const computed = lockSet(ctx.cwd, name, manifest, { dryRun: true })
+  if (!computed.ok) {
+    // Verification was promised but cannot run — keep nothing rather than keep unverified content.
+    rollbackAdd(ctx.cwd, name, preFolders)
+    return computed
+  }
+
+  const lines: string[] = []
+  const mismatches: Array<Record<string, unknown>> = []
+  if (sidecar !== undefined) {
+    for (const locator of members) {
+      const actual = computed.data.skills[locator]!
+      const expected = sidecar.lock.skills[locator]
+      if (expected === undefined) {
+        lines.push(`${locator} (skill ${actual.skill}): not recorded in the author lock`)
+        mismatches.push({ locator, skill: actual.skill, computed: actual.computedHash })
+      } else if (expected.computedHash !== actual.computedHash) {
+        lines.push(`${locator} (skill ${actual.skill}): expected ${expected.computedHash}, computed ${actual.computedHash}`)
+        mismatches.push({ locator, skill: actual.skill, expected: expected.computedHash, computed: actual.computedHash })
+      }
+    }
+    // Locator keys in the author lock are remote content — surplus entries are counted, not echoed.
+    const surplus = Object.keys(sidecar.lock.skills).filter((locator) => !members.includes(locator)).length
+    if (surplus > 0) {
+      lines.push(`the author lock records ${plural(surplus, 'member')} this manifest does not list`)
+      mismatches.push({ surplusLockMembers: surplus })
+    }
+  } else if (computed.data.setHash !== hash) {
+    lines.push(`set hash: expected ${hash!}, computed ${computed.data.setHash}`)
+    mismatches.push({ expected: hash, computed: computed.data.setHash })
+  }
+
+  const verifiedAgainst = sidecar !== undefined ? (hash !== undefined ? 'both' : 'sidecar') : 'hash'
+  if (lines.length > 0) {
+    const removed = rollbackAdd(ctx.cwd, name, preFolders)
+    return {
+      ok: false,
+      error: new SkillSetError(
+        ErrorCodes.RECEIPT_MISMATCH,
+        `Installed content for set ${JSON.stringify(name)} does not match what the share promised — ${plural(lines.length, 'mismatch')}:\n  - ${lines.join('\n  - ')}\nNothing was kept: the set's files and the ${plural(removed.length, 'skill folder')} this add installed were removed.`,
+        {
+          hint: 'The source content may have changed since the share was published. Re-check the link with the set author before retrying.',
+          data: { name, verifiedAgainst, mismatches, removedSkills: removed },
+        },
+      ),
+    }
+  }
+
+  const lockPath = `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}`
+  if (sidecar !== undefined) {
+    // Adopt the author's lock verbatim, like the manifest: the bytes that verified are what land.
+    writeFileSync(setPaths(ctx.cwd, name).lock, sidecar.text)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified ${members.length}/${members.length} member skills against the author lock — adopted ${lockPath}`)
+  } else {
+    writeFileSync(setPaths(ctx.cwd, name).lock, serializeSetLock(computed.data))
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified: set hash matches the pinned sha256 — wrote ${lockPath}`)
+  }
+  return { ok: true, data: verifiedAgainst }
+}
+
+/**
+ * Undoes this add invocation: skill folders that did not pre-exist, their skills-lock.json
+ * entries, and the set's own files. Direct file operations on purpose — a rollback must not
+ * depend on a network-fetched CLI succeeding. Returns the removed skill folder names.
+ */
+function rollbackAdd(cwd: string, name: string, preFolders: ReadonlySet<string>): string[] {
+  const removed: string[] = []
+  for (const folder of listSkillFolders(cwd)) {
+    if (preFolders.has(folder)) continue
+    rmSync(join(cwd, SKILLS_DIR, folder), { recursive: true, force: true })
+    removed.push(folder)
+  }
+  removed.sort()
+  dropSkillsLockEntries(cwd, removed)
+  const paths = setPaths(cwd, name)
+  rmSync(paths.manifest, { force: true })
+  rmSync(paths.lock, { force: true })
+  rmSync(paths.page, { force: true })
+  if (existsSync(paths.dir) && readdirSync(paths.dir).length === 0) rmSync(paths.dir, { recursive: true, force: true })
+  writeIndex(cwd)
+  return removed
+}
+
+/** Installed skill folder names; the sets directory lives inside the skills dir and is never a skill. */
+function listSkillFolders(cwd: string): Set<string> {
+  const root = join(cwd, SKILLS_DIR)
+  if (!existsSync(root)) return new Set()
+  const setsFolder = SETS_DIR.slice(SKILLS_DIR.length + 1)
+  return new Set(
+    readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && d.name !== setsFolder)
+      .map((d) => d.name),
+  )
+}
+
+/** Drops rolled-back skills from the upstream lock so it stays consistent with the folders. */
+function dropSkillsLockEntries(cwd: string, skills: readonly string[]): void {
+  if (skills.length === 0) return
+  const path = join(cwd, 'skills-lock.json')
+  if (!existsSync(path)) return
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as { skills?: Record<string, unknown> }
+    if (typeof raw.skills !== 'object' || raw.skills === null) return
+    for (const skill of skills) delete raw.skills[skill]
+    writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`)
+  } catch {
+    // An unreadable upstream lock is left as found; the folders themselves are already gone.
+  }
+}
+
+/** The author's set-lock at its derived location, or undefined when none is published there. */
+async function loadSidecar(
+  location: string | undefined,
+  name: string,
+  ctx: CommandContext,
+): Promise<Result<{ lock: SetLock; text: string } | undefined>> {
+  if (location === undefined) return { ok: true, data: undefined }
+  let text: string | undefined
+  if (/^https:\/\//i.test(location)) {
+    const fetched = await (ctx.fetcher ?? fetchManifest)(location)
+    text = fetched.ok ? fetched.data : undefined
+  } else if (existsSync(location)) {
+    text = readFileSync(location, 'utf8')
+  }
+  if (text === undefined) return { ok: true, data: undefined }
+  // Attacker-controlled remote bytes: parsed strictly, errors stay structural, and the
+  // filename check pins the lock's declared name to the manifest's.
+  const parsed = parseSetLock(text, { filename: `${name}${LOCK_SUFFIX}` })
+  if (!parsed.ok) return parsed
+  return { ok: true, data: { lock: parsed.data, text } }
+}
+
+/** Splits the pinned hash out of --hash and/or a URL fragment; both given must agree. */
+function resolvePinnedHash(rawSource: string, flag: string | undefined): Result<{ source: string; hash: string | undefined }> {
+  let source = rawSource
+  let fragment: string | undefined
+  if (/^https:\/\//i.test(rawSource)) {
+    const at = rawSource.indexOf('#')
+    if (at !== -1) {
+      const parsed = parsePin(rawSource.slice(at + 1), '=', 'the URL fragment')
+      if (!parsed.ok) return parsed
+      fragment = parsed.data
+      source = rawSource.slice(0, at)
+    }
+  }
+  let flagged: string | undefined
+  if (flag !== undefined) {
+    const parsed = parsePin(flag, ':', '--hash')
+    if (!parsed.ok) return parsed
+    flagged = parsed.data
+  }
+  if (flagged !== undefined && fragment !== undefined && flagged !== fragment) {
+    return pinUsage("the provided --hash value and the URL's embedded hash do not match")
+  }
+  return { ok: true, data: { source, hash: flagged ?? fragment } }
+}
+
+/** `sha256<sep><64-hex>` with a mandatory algorithm prefix; anything else is a usage mistake. */
+function parsePin(value: string, sep: ':' | '=', label: string): Result<string> {
+  const at = value.indexOf(sep)
+  if (at === -1 || value.slice(0, at) !== 'sha256') {
+    return pinUsage(`${label} must name its hash algorithm as sha256, e.g. sha256${sep}<64-hex>`)
+  }
+  const hex = value.slice(at + 1)
+  if (!HEX64.test(hex)) {
+    return pinUsage(`${label} must carry a 64-character lowercase hex sha256 digest after "sha256${sep}"`)
+  }
+  return { ok: true, data: hex }
+}
+
+function pinUsage(message: string): Result<never> {
+  return { ok: false, error: new SkillSetError(ErrorCodes.USAGE, message, { hint: `Usage: ${ADD_USAGE}` }) }
 }
 
 async function readManifestSource(source: string, ctx: CommandContext): Promise<Result<string>> {

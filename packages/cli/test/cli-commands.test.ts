@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { INDEX_FILENAME } from '../src/generate.ts'
-import { parseSetLock } from '../src/lock.ts'
+import { setHash } from '../src/hash.ts'
+import { createSetLock, parseSetLock, serializeSetLock } from '../src/lock.ts'
 import { SETS_DIR } from '../src/project.ts'
 import { SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
 import { run, type RunOverrides } from '../src/run.ts'
@@ -469,10 +471,11 @@ describe('add — trusted-host allowlist', () => {
     const cwd = project()
     const fake = fakeSkills(cwd)
     const { fetcher, fetched } = tracked({ [unknownUrl]: body('unknown-set') })
-    // First answer accepts the host, second accepts the install.
+    // First answer accepts the host, second accepts the install. The author-lock probe rides
+    // on the already-accepted host, so it needs no third answer.
     const { code } = await cli(cwd, fake, ['add', unknownUrl], { fetcher, confirmAnswers: [true, true] })
     expect(code).toBe(0)
-    expect(fetched).toEqual([unknownUrl])
+    expect(fetched).toEqual([unknownUrl, 'https://untrusted.test/unknown-set.skill-set.lock.json'])
     expect(existsSync(join(cwd, SETS_DIR, 'unknown-set'))).toBe(true)
   })
 
@@ -504,7 +507,7 @@ describe('add — trusted-host allowlist', () => {
     const { fetcher, fetched } = tracked({ [unknownUrl]: body('unknown-set') })
     const { code } = await cli(cwd, fake, ['add', unknownUrl, '--yes'], { fetcher })
     expect(code).toBe(0)
-    expect(fetched).toEqual([unknownUrl])
+    expect(fetched).toEqual([unknownUrl, 'https://untrusted.test/unknown-set.skill-set.lock.json'])
     expect(existsSync(join(cwd, SETS_DIR, 'unknown-set'))).toBe(true)
   })
 })
@@ -548,6 +551,318 @@ describe('add — remote content is never echoed', () => {
     const envelope = JSON.parse(out.trim()) as { ok: boolean; error: { code: string } }
     expect(envelope.ok).toBe(false)
     expect(envelope.error.code).toBe('ERR_SKILLSET_INVALID_JSON')
+  })
+})
+
+// Mirrors the fake's SKILL.md body, so author locks can be written before anything installs.
+function installedSkillHash(skill: string): string {
+  const body = `---\nname: ${skill}\ndescription: "Does ${skill} things. Use when ${skill} work comes up."\n---\n\nBody of ${skill}.\n`
+  return createHash('sha256')
+    .update('SKILL.md', 'utf8')
+    .update(Buffer.from([0]))
+    .update(body, 'utf8')
+    .update(Buffer.from([0]))
+    .digest('hex')
+}
+
+describe('add — receipt verification', () => {
+  const manifestUrl = 'https://skill-set.md/kit.skill-set.json'
+  const sidecarUrl = 'https://skill-set.md/kit.skill-set.lock.json'
+  const kitManifest = `${JSON.stringify(
+    { name: 'kit', version: '1.0.0', description: 'A kit.', skills: ['hcjmartin/gamma-repo@gamma'] },
+    null,
+    2,
+  )}\n`
+  const gammaHash = installedSkillHash('gamma')
+  const kitSetHash = setHash({ 'hcjmartin/gamma-repo@gamma': gammaHash })
+  const authorLock = serializeSetLock(
+    createSetLock('kit', '1.0.0', { 'hcjmartin/gamma-repo@gamma': { skill: 'gamma', computedHash: gammaHash } }),
+  )
+  const wrongLock = serializeSetLock(
+    createSetLock('kit', '1.0.0', { 'hcjmartin/gamma-repo@gamma': { skill: 'gamma', computedHash: 'a'.repeat(64) } }),
+  )
+  const mapFetcher = (map: Record<string, string>): RunOverrides['fetcher'] => async (url: string) =>
+    url in map ? { ok: true as const, data: map[url]! } : { ok: false as const, error: new Error('unexpected url') as never }
+
+  it('adopts a matching author lock verbatim and reports the verification', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
+    })
+    expect(code).toBe(0)
+    expect(out).toContain('author lock found — installed content will be verified against it')
+    expect(out).toContain('Verified 1/1 member skills against the author lock')
+    // Adopted byte-for-byte, like the manifest: the bytes that verified are what land.
+    expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'kit.skill-set.lock.json'), 'utf8')).toBe(authorLock)
+    expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'SKILL-SET.md'), 'utf8')).toContain('Locked at set version 1.0.0.')
+  })
+
+  it('with no author lock published, --hash verifies the rollup and writes the computed lock', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--hash', `sha256:${kitSetHash}`, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest }),
+    })
+    expect(code).toBe(0)
+    expect(out).toContain('no author lock published for this set')
+    expect(out).toContain('Verified: set hash matches the pinned sha256')
+    const lock = parseSetLock(readFileSync(join(cwd, SETS_DIR, 'kit', 'kit.skill-set.lock.json'), 'utf8'))
+    expect(lock.ok).toBe(true)
+    if (lock.ok) expect(lock.data.setHash).toBe(kitSetHash)
+  })
+
+  it('--json reports verified: "both" when the author lock and the pinned hash agree', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--hash', `sha256:${kitSetHash}`, '--yes', '--json'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
+    })
+    expect(code).toBe(0)
+    const envelope = JSON.parse(out.trim()) as { ok: boolean; data: { verified: string; added: boolean } }
+    expect(envelope.ok).toBe(true)
+    expect(envelope.data.added).toBe(true)
+    expect(envelope.data.verified).toBe('both')
+  })
+
+  it('a mismatched member is named with both hashes, and nothing is kept', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, err } = await cli(cwd, fake, ['add', manifestUrl, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: wrongLock }),
+    })
+    expect(code).toBe(3)
+    expect(err).toContain(`hcjmartin/gamma-repo@gamma (skill gamma): expected ${'a'.repeat(64)}, computed ${gammaHash}`)
+    expect(err).toContain('Nothing was kept')
+    // Rollback: the installed skill, its upstream lock entry, and the set's own files are gone.
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+    const upstream = JSON.parse(readFileSync(join(cwd, 'skills-lock.json'), 'utf8')) as { skills: Record<string, unknown> }
+    expect('gamma' in upstream.skills).toBe(false)
+  })
+
+  it('--json reports the receipt mismatch structurally with its own error code', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--yes', '--json'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: wrongLock }),
+    })
+    expect(code).toBe(3)
+    const envelope = JSON.parse(out.trim()) as {
+      ok: boolean
+      error: { code: string; data: { verifiedAgainst: string; mismatches: unknown[]; removedSkills: string[] } }
+    }
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error.code).toBe('ERR_SKILLSET_RECEIPT_MISMATCH')
+    expect(envelope.error.data.verifiedAgainst).toBe('sidecar')
+    expect(envelope.error.data.mismatches).toHaveLength(1)
+    expect(envelope.error.data.removedSkills).toEqual(['gamma'])
+  })
+
+  it('a pinned hash that does not match the computed rollup rolls everything back', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, err } = await cli(cwd, fake, ['add', manifestUrl, '--hash', `sha256:${'b'.repeat(64)}`, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest }),
+    })
+    expect(code).toBe(3)
+    expect(err).toContain(`set hash: expected ${'b'.repeat(64)}, computed ${kitSetHash}`)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+  })
+
+  it('an author lock that disagrees with the pinned hash fails before anything installs', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, err } = await cli(cwd, fake, ['add', manifestUrl, '--hash', `sha256:${'c'.repeat(64)}`, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
+    })
+    expect(code).toBe(3)
+    expect(err).toContain('does not match the provided hash')
+    expect(err).toContain('no files changed')
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+  })
+
+  it('a #sha256= fragment pins like --hash and is stripped from the fetch and the recorded source', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return url === manifestUrl
+        ? { ok: true as const, data: kitManifest }
+        : { ok: false as const, error: new Error('unexpected url') as never }
+    }
+    const { code, out } = await cli(cwd, fake, ['add', `${manifestUrl}#sha256=${kitSetHash}`, '--yes'], { fetcher })
+    expect(code).toBe(0)
+    expect(out).toContain('Verified: set hash matches the pinned sha256')
+    expect(fetched[0]).toBe(manifestUrl)
+    const index = JSON.parse(readFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), 'utf8')) as {
+      sets: Record<string, { source?: string }>
+    }
+    expect(index.sets['kit']!.source).toBe(manifestUrl)
+  })
+
+  it('flag and fragment must agree; agreement is accepted', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const fetcher = mapFetcher({ [manifestUrl]: kitManifest })
+    const disagree = await cli(
+      cwd,
+      fake,
+      ['add', `${manifestUrl}#sha256=${'d'.repeat(64)}`, '--hash', `sha256:${kitSetHash}`, '--yes'],
+      { fetcher },
+    )
+    expect(disagree.code).toBe(2)
+    expect(disagree.err).toContain("the provided --hash value and the URL's embedded hash do not match")
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+    const agree = await cli(
+      cwd,
+      fake,
+      ['add', `${manifestUrl}#sha256=${kitSetHash}`, '--hash', `sha256:${kitSetHash}`, '--yes'],
+      { fetcher },
+    )
+    expect(agree.code).toBe(0)
+  })
+
+  it.each([
+    [`md5:${'a'.repeat(64)}`],
+    ['a'.repeat(64)],
+    ['sha256:nothex'],
+    [`sha256:${'A'.repeat(64)}`],
+  ])('rejects --hash %s as a usage error (exit 2)', async (value) => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code } = await cli(cwd, fake, ['add', manifestUrl, '--hash', value])
+    expect(code).toBe(2)
+  })
+
+  it('rejects an unknown fragment algorithm (exit 2)', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code } = await cli(cwd, fake, ['add', `${manifestUrl}#md5=${'a'.repeat(64)}`])
+    expect(code).toBe(2)
+  })
+
+  it('without a pin or a published author lock, add keeps trust-on-first-use behaviour', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest }),
+    })
+    expect(code).toBe(0)
+    expect(out).toContain('no author lock published for this set')
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(true)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit', 'kit.skill-set.lock.json'))).toBe(false)
+  })
+
+  it('keeps author-lock validation errors free of lock content', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const malicious = JSON.stringify({
+      version: 1,
+      name: 'kit',
+      setVersion: '1.0.0',
+      setHash: 'MARKER-HASH-INJ-13',
+      skills: { 'MARKER-KEY-INJ-13': { skill: 'gamma', computedHash: 'MARKER-MEMBER-INJ-13' } },
+    })
+    const { code, out, err } = await cli(cwd, fake, ['add', manifestUrl, '--yes', '--json'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: malicious }),
+    })
+    expect(code).toBe(1)
+    expect(out).not.toContain('MARKER-')
+    expect(err).not.toContain('MARKER-')
+    const envelope = JSON.parse(out.trim()) as { ok: boolean; error: { code: string } }
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error.code).toBe('ERR_SKILLSET_INVALID_LOCK')
+    // The invalid lock aborted the add before anything installed or landed on disk.
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+  })
+
+  it('keeps the version-gate error free of a non-numeric sidecar version', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    // The version gate runs before shape validation, so its message is a distinct echo path.
+    const malicious = JSON.stringify({ version: 'MARKER-VERSION-INJ-29' })
+    const { code, out, err } = await cli(cwd, fake, ['add', manifestUrl, '--yes', '--json'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: malicious }),
+    })
+    expect(code).toBe(1)
+    expect(out).not.toContain('MARKER-')
+    expect(err).not.toContain('MARKER-')
+    const envelope = JSON.parse(out.trim()) as { ok: boolean; error: { code: string; data?: Record<string, unknown> } }
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error.code).toBe('ERR_SKILLSET_LOCK_VERSION')
+    expect(envelope.error.data?.found).toBeUndefined()
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+  })
+
+  it('rollback never touches a pre-existing shared skill folder', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'base', 'hcjmartin/gamma-repo@gamma', '--yes'])
+    const pairUrl = 'https://skill-set.md/pair.skill-set.json'
+    const pairManifest = `${JSON.stringify(
+      { name: 'pair', version: '1.0.0', skills: ['hcjmartin/gamma-repo@gamma', 'hcjmartin/delta-repo@delta'] },
+      null,
+      2,
+    )}\n`
+    const pairLock = serializeSetLock(
+      createSetLock('pair', '1.0.0', {
+        'hcjmartin/gamma-repo@gamma': { skill: 'gamma', computedHash: gammaHash },
+        'hcjmartin/delta-repo@delta': { skill: 'delta', computedHash: 'a'.repeat(64) },
+      }),
+    )
+    const { code, err } = await cli(cwd, fake, ['add', pairUrl, '--yes'], {
+      fetcher: mapFetcher({ [pairUrl]: pairManifest, 'https://skill-set.md/pair.skill-set.lock.json': pairLock }),
+    })
+    expect(code).toBe(3)
+    expect(err).toContain('hcjmartin/delta-repo@delta')
+    // The shared skill pre-existed this add, so the rollback leaves it (and its lock entry) alone.
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(true)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'delta'))).toBe(false)
+    expect(existsSync(join(cwd, SETS_DIR, 'pair'))).toBe(false)
+    const upstream = JSON.parse(readFileSync(join(cwd, 'skills-lock.json'), 'utf8')) as { skills: Record<string, unknown> }
+    expect('gamma' in upstream.skills).toBe(true)
+    expect('delta' in upstream.skills).toBe(false)
+    const index = JSON.parse(readFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), 'utf8')) as { sets: Record<string, unknown> }
+    expect(Object.keys(index.sets)).toEqual(['base'])
+  })
+
+  it('dry run previews verification and fetches no author lock', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return url === manifestUrl
+        ? { ok: true as const, data: kitManifest }
+        : { ok: false as const, error: new Error('unexpected url') as never }
+    }
+    const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--hash', `sha256:${kitSetHash}`, '--dry-run'], { fetcher })
+    expect(code).toBe(0)
+    expect(out).toContain(`would verify: set hash against sha256:${kitSetHash}`)
+    expect(out).toContain(`would verify: installed content against the author lock at ${sidecarUrl}, if published`)
+    expect(fetched).toEqual([manifestUrl])
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+  })
+
+  it('a local manifest path discovers its sibling lock file', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const shareDir = join(cwd, 'share')
+    mkdirSync(shareDir, { recursive: true })
+    writeFileSync(join(shareDir, 'kit.skill-set.json'), kitManifest)
+    writeFileSync(join(shareDir, 'kit.skill-set.lock.json'), authorLock)
+    const { code, out } = await cli(cwd, fake, ['add', join(shareDir, 'kit.skill-set.json'), '--yes'])
+    expect(code).toBe(0)
+    expect(out).toContain('Verified 1/1 member skills against the author lock')
+    expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'kit.skill-set.lock.json'), 'utf8')).toBe(authorLock)
   })
 })
 

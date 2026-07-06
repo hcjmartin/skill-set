@@ -30,6 +30,12 @@ const setLockSchema = z.strictObject({
 export type SetLock = z.infer<typeof setLockSchema>
 export type SetLockMember = z.infer<typeof memberSchema>
 
+function describeVersion(value: unknown, noun: string): string {
+  if (typeof value === 'number') return `has ${noun} ${value}`
+  if (value === undefined) return `declares no ${noun}`
+  return `declares a non-numeric ${noun} (${typeof value})`
+}
+
 export function parseSetLock(text: string, opts?: { filename?: string }): Result<SetLock> {
   const context = opts?.filename ?? 'Set-lock'
   const json = parseStrictJson(text, context)
@@ -39,19 +45,21 @@ export function parseSetLock(text: string, opts?: { filename?: string }): Result
   // discarded or rewritten (spec §5 — the upstream wipe-on-mismatch anti-pattern).
   const raw = json.data as Record<string, unknown> | null
   if (raw !== null && typeof raw === 'object' && !Array.isArray(raw) && raw.version !== SET_LOCK_VERSION) {
+    // The version field is remote-controlled when the lock arrives as an add sidecar:
+    // only a numeric value is echoed; anything else is described structurally.
     return fail(
       ErrorCodes.LOCK_VERSION,
-      `${context} has lock format version ${JSON.stringify(raw.version)}, but this skill-set implementation reads version ${SET_LOCK_VERSION}`,
+      `${context} ${describeVersion(raw.version, 'lock format version')}, but this skill-set implementation reads version ${SET_LOCK_VERSION}`,
       {
         hint: 'Align the skill-set version with the one that wrote the lock, or regenerate with "skill-set lock". The file was left untouched.',
-        data: { found: raw.version, supported: SET_LOCK_VERSION },
+        data: { ...(typeof raw.version === 'number' ? { found: raw.version } : {}), supported: SET_LOCK_VERSION },
       },
     )
   }
 
   const parsed = setLockSchema.safeParse(json.data)
   if (!parsed.success) {
-    const issues = structuralIssues(parsed.error.issues)
+    const issues = structuralIssues(anonymiseMemberKeys(parsed.error.issues, json.data))
     return fail(ErrorCodes.INVALID_LOCK, `${context} is not a valid set-lock:\n  - ${issues.lines.join('\n  - ')}`, {
       hint: 'Regenerate with "skill-set lock".',
       data: issues.data,
@@ -83,6 +91,21 @@ export function parseSetLock(text: string, opts?: { filename?: string }): Result
   }
 
   return { ok: true, data: lock }
+}
+
+/**
+ * Locator keys under `skills` are unconstrained remote text, and Zod issue paths carry them —
+ * a lock fetched by `add` must not echo them, so errors name members by position instead
+ * (the record convention matching the manifest's positional skills[] reporting, spec §2.4).
+ */
+function anonymiseMemberKeys<T extends { path: PropertyKey[] }>(issues: readonly T[], data: unknown): T[] {
+  const skills = (data as { skills?: unknown } | null)?.skills
+  const keys = typeof skills === 'object' && skills !== null ? Object.keys(skills) : []
+  return issues.map((issue) => {
+    if (issue.path[0] !== 'skills' || issue.path.length < 2 || typeof issue.path[1] !== 'string') return issue
+    const index = keys.indexOf(issue.path[1])
+    return { ...issue, path: [issue.path[0], index === -1 ? '?' : index, ...issue.path.slice(2)] }
+  })
 }
 
 export function createSetLock(
@@ -156,10 +179,10 @@ export function parseSkillsLock(text: string, opts?: { filename?: string }): Res
   if (raw !== null && typeof raw === 'object' && !Array.isArray(raw) && raw.version !== SKILLS_LOCK_VERSION) {
     return fail(
       ErrorCodes.LOCK_VERSION,
-      `${context} has version ${JSON.stringify(raw.version)}, but this skill-set implementation reads upstream lock version ${SKILLS_LOCK_VERSION}`,
+      `${context} ${describeVersion(raw.version, 'version')}, but this skill-set implementation reads upstream lock version ${SKILLS_LOCK_VERSION}`,
       {
         hint: 'A newer "skills" CLI may have changed its lock format — update skill-set, or re-run the pinned skills version. The file was left untouched.',
-        data: { found: raw.version, supported: SKILLS_LOCK_VERSION },
+        data: { ...(typeof raw.version === 'number' ? { found: raw.version } : {}), supported: SKILLS_LOCK_VERSION },
       },
     )
   }

@@ -37,28 +37,47 @@ export function usageError(message: string, usage: string): CommandResult {
   }
 }
 
-/** Splits a command's args into known flags and positionals; unknown flags are usage errors. */
+/**
+ * Splits a command's args into known flags and positionals; unknown flags are usage errors.
+ * Flags named in `valued` take a value (`--flag value` or `--flag=value`), collected in `values`.
+ */
 export function splitFlags(
   args: readonly string[],
   allowed: readonly string[],
   usage: string,
-): Result<{ flags: Set<string>; positionals: string[] }> {
+  valued: readonly string[] = [],
+): Result<{ flags: Set<string>; values: Map<string, string>; positionals: string[] }> {
   const flags = new Set<string>()
+  const values = new Map<string, string>()
   const positionals: string[] = []
-  for (const arg of args) {
-    if (arg.startsWith('-')) {
-      if (!allowed.includes(arg)) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (!arg.startsWith('-')) {
+      positionals.push(arg)
+      continue
+    }
+    const eq = arg.indexOf('=')
+    const flagName = eq === -1 ? arg : arg.slice(0, eq)
+    if (valued.includes(flagName)) {
+      const value = eq === -1 ? args[++i] : arg.slice(eq + 1)
+      if (value === undefined) {
         return {
           ok: false,
-          error: new SkillSetError(ErrorCodes.USAGE, `Unknown flag ${JSON.stringify(arg)}`, {
-            hint: `Usage: ${usage}. Args for the wrapped skills CLI go after a "--" sentinel.`,
-          }),
+          error: new SkillSetError(ErrorCodes.USAGE, `${flagName} needs a value`, { hint: `Usage: ${usage}` }),
         }
       }
-      flags.add(arg)
-    } else {
-      positionals.push(arg)
+      values.set(flagName, value)
+      continue
     }
+    if (!allowed.includes(arg)) {
+      return {
+        ok: false,
+        error: new SkillSetError(ErrorCodes.USAGE, `Unknown flag ${JSON.stringify(arg)}`, {
+          hint: `Usage: ${usage}. Args for the wrapped skills CLI go after a "--" sentinel.`,
+        }),
+      }
+    }
+    flags.add(arg)
   }
-  return { ok: true, data: { flags, positionals } }
+  return { ok: true, data: { flags, values, positionals } }
 }

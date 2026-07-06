@@ -22,7 +22,7 @@ interface CommandEntry {
 
 const COMMANDS: Record<string, CommandEntry> = {
   init: { usage: 'init <set> [locators...]', describe: 'Scaffold a new set manifest', handler: cmdInit },
-  add: { usage: 'add <url|path>', describe: 'Fetch a shared set manifest, then install it', handler: cmdAdd },
+  add: { usage: 'add <url|path> [--hash]', describe: 'Fetch a shared set manifest, then install it', handler: cmdAdd },
   install: { usage: 'install <set>', describe: 'Install members, skipping ones the lock already satisfies', handler: cmdInstall },
   build: { usage: 'build [<set>] [--lock]', describe: 'Regenerate SKILL-SET.md files and the skill-sets.json index', handler: cmdBuild },
   lock: { usage: 'lock <set>', describe: "Record each member's installed content in a set-lock", handler: cmdLock },
@@ -41,11 +41,12 @@ ${Object.values(COMMANDS)
   .join('\n')}
 
 Flags:
-  --json          Machine-readable output: exactly one JSON object on stdout
-  --yes, -y       Assume yes for prompts (required where a prompt would block CI)
-  --dry-run       Print what would run or be written; change nothing, spawn nothing
-  --help, -h      Show this help
-  --version, -v   Show the skill-set version and the pinned skills version
+  --json                Machine-readable output: exactly one JSON object on stdout
+  --yes, -y             Assume yes for prompts (required where a prompt would block CI)
+  --dry-run             Print what would run or be written; change nothing, spawn nothing
+  --hash sha256:<hex>   For add: keep the set only if its content matches this set hash
+  --help, -h            Show this help
+  --version, -v         Show the skill-set version and the pinned skills version
 
 Args after "--" pass through to the skills CLI verbatim.
   e.g. "skill-set install demo -- --agent claude-code cursor" installs to those agents only.
@@ -156,9 +157,11 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
 // The documented taxonomy: usage mistakes, lock drift, and cross-set conflicts are
 // machine-distinguishable; everything else is a plain error. Blocked confirmations and
 // a missing lock under --frozen are precondition-shaped, so they land with usage (2).
+// A receipt mismatch on add is content-not-as-promised, the same class as drift; JSON
+// consumers discriminate via error.code.
 function exitCodeFor(code: SkillSetErrorCode): number {
   if (code === ErrorCodes.USAGE || code === ErrorCodes.CONFIRM_REQUIRED || code === ErrorCodes.FROZEN_NO_LOCK) return 2
-  if (code === ErrorCodes.DRIFT) return 3
+  if (code === ErrorCodes.DRIFT || code === ErrorCodes.RECEIPT_MISMATCH) return 3
   if (code === ErrorCodes.CONFLICT) return 4
   return 1
 }

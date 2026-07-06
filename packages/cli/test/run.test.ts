@@ -50,10 +50,53 @@ describe('run — dispatch and meta-flags', () => {
     expect(out).toContain('skills@1.5')
   })
 
+  it('intercepts --version after a verb before any dispatch', async () => {
+    // Same foot-gun class as `update --help`: a meta-flag after a verb must never run the verb.
+    const { code, out, err } = await cli(['update', '--version'])
+    expect(code).toBe(0)
+    expect(out).toContain(`skill-set/${VERSION}`)
+    expect(err).toBe('')
+  })
+
+  it('intercepts the short meta-flags -h and -v after a verb', async () => {
+    const help = await cli(['update', '-h'])
+    expect(help.code).toBe(0)
+    expect(help.out).toContain('Usage: skill-set <command>')
+    expect(help.err).toBe('')
+    const version = await cli(['update', '-v'])
+    expect(version.code).toBe(0)
+    expect(version.out).toContain(`skill-set/${VERSION}`)
+    expect(version.err).toBe('')
+  })
+
   it('a --help after the passthrough sentinel is not a meta-flag', async () => {
     // `-- --help` belongs to the wrapped CLI; the command itself still dispatches (usage error here).
     const { code } = await cli(['nonsense', '--', '--help'])
     expect(code).toBe(2)
+  })
+
+  it('a --version after the passthrough sentinel is not a meta-flag', async () => {
+    const { code, out } = await cli(['nonsense', '--', '--version'])
+    expect(code).toBe(2)
+    expect(out).not.toContain(`skill-set/${VERSION}`)
+  })
+
+  it('a flags-only invocation is a usage error, never a dispatch', async () => {
+    // Our mode flags without a verb name no command; nothing may run or forward.
+    const { code, err } = await cli(['--dry-run'])
+    expect(code).toBe(2)
+    expect(err).toContain('Unknown command ""')
+    expect(err).toContain('skill-set --help')
+  })
+
+  it('--json alone still yields the single usage-error envelope', async () => {
+    const { code, out } = await cli(['--json'])
+    expect(code).toBe(2)
+    const lines = out.split('\n').filter((l) => l !== '')
+    expect(lines).toHaveLength(1)
+    const envelope = JSON.parse(lines[0]!) as { ok: boolean; error: { code: string } }
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error.code).toBe('ERR_SKILLSET_USAGE')
   })
 
   it('exits 2 for an unknown command, with the help hint on stderr', async () => {

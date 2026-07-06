@@ -68,8 +68,8 @@ function noopInstall(): CommandRunner {
 describe('resolveMember discovery', () => {
   it('tier 1: a fresh unnamed install resolves via the new lock key', async () => {
     const cwd = project()
-    const runner = installs(cwd, { 'find-skills': entry('vercel-labs/skills') })
-    const result = await resolveMember('vercel-labs/skills', { cwd, runner })
+    const runner = installs(cwd, { 'find-skills': entry('vercel-labs/agent-skills') })
+    const result = await resolveMember('vercel-labs/agent-skills', { cwd, runner })
     expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
     if (!result.ok) return
     expect(result.data.skill).toBe('find-skills')
@@ -78,18 +78,18 @@ describe('resolveMember discovery', () => {
   })
 
   it('a named locator resolves without any lock diff', async () => {
-    const cwd = project({ 'find-skills': entry('vercel-labs/skills') })
-    const result = await resolveMember('vercel-labs/skills@find-skills', { cwd, runner: noopInstall() })
+    const cwd = project({ 'find-skills': entry('vercel-labs/agent-skills') })
+    const result = await resolveMember('vercel-labs/agent-skills@find-skills', { cwd, runner: noopInstall() })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.skill).toBe('find-skills')
   })
 
   it('tier 2: an unnamed reinstall resolves via a unique source match', async () => {
     const cwd = project({
-      'find-skills': entry('vercel-labs/skills'),
+      'find-skills': entry('vercel-labs/agent-skills'),
       unrelated: entry('someone/else'),
     })
-    const result = await resolveMember('vercel-labs/skills', { cwd, runner: noopInstall() })
+    const result = await resolveMember('vercel-labs/agent-skills', { cwd, runner: noopInstall() })
     expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
     if (result.ok) expect(result.data.skill).toBe('find-skills')
   })

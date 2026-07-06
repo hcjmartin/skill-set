@@ -35,17 +35,18 @@ interface FakeSkills {
 function fakeSkills(cwd: string): FakeSkills {
   const calls: string[][] = []
   const captureFlags: Array<boolean | undefined> = []
-  const lockPath = join(cwd, 'skills-lock.json')
-  const readLock = (): { version: number; skills: Record<string, Record<string, string>> } =>
-    existsSync(lockPath)
-      ? (JSON.parse(readFileSync(lockPath, 'utf8')) as ReturnType<typeof readLock>)
-      : { version: 1, skills: {} }
-  const writeLock = (lock: unknown): void => writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`)
   const ok = { ok: true as const, data: { exitCode: 0, stdout: '', stderr: '' } }
 
   const runner: CommandRunner = async (command, args, opts) => {
     calls.push([command, ...args])
     captureFlags.push(opts?.capture)
+    const runCwd = opts?.cwd ?? cwd
+    const runLockPath = join(runCwd, 'skills-lock.json')
+    const readRunLock = (): { version: number; skills: Record<string, Record<string, string>> } =>
+      existsSync(runLockPath)
+        ? (JSON.parse(readFileSync(runLockPath, 'utf8')) as ReturnType<typeof readRunLock>)
+        : { version: 1, skills: {} }
+    const writeRunLock = (lock: unknown): void => writeFileSync(runLockPath, `${JSON.stringify(lock, null, 2)}\n`)
     const verb = args[2]
     if (verb === 'add') {
       const sourceArg = args[3]!
@@ -54,30 +55,30 @@ function fakeSkills(cwd: string): FakeSkills {
       const ref = hashAt > 0 ? sourceArg.slice(hashAt + 1) : undefined
       const skillFlag = args.indexOf('--skill')
       const skill = skillFlag === -1 ? source.split('/').pop()! : args[skillFlag + 1]!
-      const folder = join(cwd, SKILLS_DIR, skill)
+      const folder = join(runCwd, SKILLS_DIR, skill)
       mkdirSync(folder, { recursive: true })
       writeFileSync(
         join(folder, 'SKILL.md'),
         `---\nname: ${skill}\ndescription: "Does ${skill} things. Use when ${skill} work comes up."\n---\n\nBody of ${skill}.\n`,
       )
-      const lock = readLock()
+      const lock = readRunLock()
       lock.skills[skill] = { source, sourceType: 'github', computedHash: 'f'.repeat(64), ...(ref === undefined ? {} : { ref }) }
-      writeLock(lock)
+      writeRunLock(lock)
       return ok
     }
     if (verb === 'update') {
       for (const skill of args.slice(3).filter((a) => !a.startsWith('-'))) {
-        appendFileSync(join(cwd, SKILLS_DIR, skill, 'SKILL.md'), '\nUpdated content.\n')
+        appendFileSync(join(runCwd, SKILLS_DIR, skill, 'SKILL.md'), '\nUpdated content.\n')
       }
       return ok
     }
     if (verb === 'remove') {
-      const lock = readLock()
+      const lock = readRunLock()
       for (const skill of args.slice(3).filter((a) => !a.startsWith('-'))) {
-        rmSync(join(cwd, SKILLS_DIR, skill), { recursive: true, force: true })
+        rmSync(join(runCwd, SKILLS_DIR, skill), { recursive: true, force: true })
         delete lock.skills[skill]
       }
-      writeLock(lock)
+      writeRunLock(lock)
       return ok
     }
     if (verb === 'check') return ok
@@ -564,6 +565,99 @@ function installedSkillHash(skill: string): string {
     .update(Buffer.from([0]))
     .digest('hex')
 }
+
+describe('share', () => {
+  it('exports only a manifest and lock, hashing staged remote content instead of mutated local folders', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'portable', 'hcjmartin/alpha-repo@alpha', '--yes'])
+    appendFileSync(join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md'), '\nlocal mutation that should not enter the share lock\n')
+
+    const { code, out } = await cli(cwd, fake, ['share', 'portable', '--yes'])
+    expect(code).toBe(0)
+    expect(out).toContain('Created shareable skill-set at .agents/skills/skill-sets/_share/portable')
+    expect(out).toContain('remote delivered skill content, not local skill folders')
+
+    const shareDir = join(cwd, SETS_DIR, '_share', 'portable')
+    expect(existsSync(join(shareDir, 'portable.skill-set.json'))).toBe(true)
+    expect(existsSync(join(shareDir, 'portable.skill-set.lock.json'))).toBe(true)
+    expect(existsSync(join(shareDir, 'SKILL-SET.md'))).toBe(false)
+    expect(existsSync(join(cwd, SETS_DIR, 'portable', 'portable.skill-set.lock.json'))).toBe(false)
+
+    const lock = parseSetLock(readFileSync(join(shareDir, 'portable.skill-set.lock.json'), 'utf8'))
+    expect(lock.ok).toBe(true)
+    if (lock.ok) {
+      expect(lock.data.skills['hcjmartin/alpha-repo@alpha']!.computedHash).toBe(installedSkillHash('alpha'))
+    }
+    expect(readFileSync(join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md'), 'utf8')).toContain('local mutation')
+  })
+
+  it('accepts a hand-written manifest path, output path, and optional metadata prompts', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    mkdirSync(join(cwd, 'custom'), { recursive: true })
+    writeFileSync(
+      join(cwd, 'custom', 'custom.skill-set.json'),
+      `${JSON.stringify({ name: 'custom', version: '1.2.3', skills: ['hcjmartin/beta-repo@beta'] }, null, 2)}\n`,
+    )
+
+    const { code } = await cli(
+      cwd,
+      fake,
+      ['share', '--manifest', 'custom/custom.skill-set.json', '--output', 'exports/custom'],
+      { promptAnswers: ['Custom share description.', 'Harry Martin', 'https://example.com/harry', 'https://example.com/custom'] },
+    )
+    expect(code).toBe(0)
+
+    const manifest = JSON.parse(readFileSync(join(cwd, 'exports', 'custom', 'custom.skill-set.json'), 'utf8')) as {
+      description?: string
+      author?: { name?: string; url?: string }
+      homepage?: string
+    }
+    expect(manifest.description).toBe('Custom share description.')
+    expect(manifest.author).toEqual({ name: 'Harry Martin', url: 'https://example.com/harry' })
+    expect(manifest.homepage).toBe('https://example.com/custom')
+    expect(existsSync(join(cwd, 'exports', 'custom', 'custom.skill-set.lock.json'))).toBe(true)
+  })
+
+  it('can prompt for the input when no set name or manifest path is provided', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'prompted', 'hcjmartin/gamma-repo@gamma'])
+
+    const { code, out } = await cli(cwd, fake, ['share'], { promptAnswers: ['prompted'], confirmAnswers: [true] })
+    expect(code).toBe(0)
+    expect(out).toContain('Created shareable skill-set at .agents/skills/skill-sets/_share/prompted')
+  })
+
+  it('keeps the export namespace separate from a real set named share', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'share', 'hcjmartin/delta-repo@delta'])
+
+    const { code } = await cli(cwd, fake, ['share', 'share', '--yes'])
+    expect(code).toBe(0)
+    expect(existsSync(join(cwd, SETS_DIR, 'share', 'share.skill-set.json'))).toBe(true)
+    expect(existsSync(join(cwd, SETS_DIR, '_share', 'share', 'share.skill-set.json'))).toBe(true)
+  })
+
+  it('rejects local-only members before staging anything', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    mkdirSync(join(cwd, SETS_DIR, 'local'), { recursive: true })
+    writeFileSync(
+      join(cwd, SETS_DIR, 'local', 'local.skill-set.json'),
+      `${JSON.stringify({ name: 'local', version: '0.1.0', skills: ['./skills/draft-skill'] }, null, 2)}\n`,
+    )
+
+    const { code, err } = await cli(cwd, fake, ['share', 'local', '--output', 'share/local'])
+    expect(code).toBe(1)
+    expect(err).toContain('Cannot share "local"')
+    expect(err).toContain('source is local to this machine')
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, 'share', 'local'))).toBe(false)
+  })
+})
 
 describe('add — receipt verification', () => {
   const manifestUrl = 'https://skill-set.md/kit.skill-set.json'

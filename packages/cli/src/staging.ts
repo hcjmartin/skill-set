@@ -1,0 +1,108 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
+import { createSetLock, type SetLock, type SetLockMember } from './lock.ts'
+import type { Manifest } from './manifest.ts'
+import { SETS_DIR } from './project.ts'
+import { buildAddInvocation, locateMember, resolveMember, type CommandRunner, type SkillsInvocation } from './resolver.ts'
+
+const SHARE_DIR = `${SETS_DIR}/_share`
+
+export interface StagedManifest {
+  lock: SetLock
+  staging: string
+}
+
+export async function stageManifestMembers(
+  manifest: Manifest,
+  opts: {
+    cwd: string
+    runner?: CommandRunner
+    extraArgs?: readonly string[]
+    capture?: boolean
+    label: string
+    onStage?: (locator: string, invocation: SkillsInvocation) => void
+  },
+): Promise<Result<StagedManifest>> {
+  const staging = createStagingProject(opts.cwd)
+  if (!staging.ok) return staging
+  const members: Record<string, SetLockMember> = {}
+  const failed: Array<{ locator: string; code: string; message: string }> = []
+  try {
+    for (const locator of manifest.skills) {
+      opts.onStage?.(locator, buildAddInvocation(locator))
+      const resolved = await resolveMember(locator, {
+        cwd: staging.data,
+        runner: opts.runner,
+        extraArgs: opts.extraArgs,
+        capture: opts.capture,
+      })
+      if (resolved.ok) members[locator] = resolved.data
+      else failed.push({ locator, code: resolved.error.code, message: resolved.error.message })
+    }
+    if (failed.length > 0) {
+      rmSync(staging.data, { recursive: true, force: true })
+      return {
+        ok: false,
+        error: new SkillSetError(
+          ErrorCodes.INSTALL_FAILED,
+          `Cannot ${opts.label} — ${failed.length} of ${plural(manifest.skills.length, 'member skill')} failed to resolve in a clean staging project:\n  - ${failed.map((f) => `${f.locator}: ${f.message}`).join('\n  - ')}`,
+          { hint: 'Fix the failing remote skill locators and try again.', data: { name: manifest.name, failed } },
+        ),
+      }
+    }
+  } catch (cause) {
+    rmSync(staging.data, { recursive: true, force: true })
+    return {
+      ok: false,
+      error: new SkillSetError(ErrorCodes.UNEXPECTED, `Unexpected failure while staging ${manifest.name}: ${(cause as Error).message}`, {
+        cause,
+      }),
+    }
+  }
+  return { ok: true, data: { lock: createSetLock(manifest.name, manifest.version, members), staging: staging.data } }
+}
+
+export function createStagingProject(cwd: string): Result<string> {
+  try {
+    return { ok: true, data: mkdtempSync(join(tmpdir(), 'skill-set-share-')) }
+  } catch (cause) {
+    try {
+      const fallbackRoot = join(cwd, SHARE_DIR, '.tmp')
+      mkdirSync(fallbackRoot, { recursive: true })
+      return { ok: true, data: mkdtempSync(join(fallbackRoot, 'skill-set-share-')) }
+    } catch (fallbackCause) {
+      return {
+        ok: false,
+        error: new SkillSetError(ErrorCodes.UNEXPECTED, 'Could not create a staging project', {
+          hint: `Ensure the system temp directory is writable, or that ${SHARE_DIR}/.tmp can be created in this project.`,
+          data: {
+            tempError: cause instanceof Error ? cause.message : String(cause),
+            fallbackError: fallbackCause instanceof Error ? fallbackCause.message : String(fallbackCause),
+          },
+        }),
+      }
+    }
+  }
+}
+
+export function localContentMismatches(
+  cwd: string,
+  manifest: Manifest,
+  lock: SetLock,
+): Array<{ locator: string; skill: string }> {
+  const mismatches: Array<{ locator: string; skill: string }> = []
+  for (const locator of manifest.skills) {
+    const staged = lock.skills[locator]
+    if (staged === undefined) continue
+    const local = locateMember(locator, { cwd })
+    if (!local.ok) continue
+    if (local.data.computedHash !== staged.computedHash) mismatches.push({ locator, skill: local.data.skill })
+  }
+  return mismatches
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}

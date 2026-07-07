@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
-import { createSetLock, LOCK_SUFFIX, serializeSetLock, type SetLock, type SetLockMember } from '../lock.ts'
+import { LOCK_SUFFIX, serializeSetLock } from '../lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { SETS_DIR, setPaths } from '../project.ts'
-import { buildAddInvocation, locateMember, parseLocator, resolveMember } from '../resolver.ts'
+import { buildAddInvocation, parseLocator } from '../resolver.ts'
+import { localContentMismatches, stageManifestMembers, type StagedManifest } from '../staging.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const SHARE_USAGE = 'skill-set share [<set>] [--manifest <path>] [--output <dir>]'
@@ -15,11 +15,6 @@ const SHARE_DIR = `${SETS_DIR}/_share`
 type ShareInput =
   | { kind: 'set'; name: string; path: string; manifest: Manifest }
   | { kind: 'manifest'; path: string; manifest: Manifest }
-
-interface StagedShare {
-  lock: SetLock
-  staging: string
-}
 
 export async function cmdShare(args: string[], ctx: CommandContext): Promise<CommandResult> {
   const split = splitFlags(args, [], SHARE_USAGE, ['--manifest', '--output'])
@@ -71,7 +66,16 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
     return { ok: true, data: { name, dryRun: true, output: displayPath(ctx.cwd, output.data), members: manifest.skills.length } }
   }
 
-  const staged = await stageAndLock(ctx, name, manifest)
+  const staged = await stageManifestMembers(manifest, {
+    cwd: ctx.cwd,
+    runner: ctx.runner,
+    extraArgs: ctx.passthrough,
+    capture: ctx.ui.json,
+    label: `share ${JSON.stringify(name)}`,
+    onStage: (_locator, invocation) => {
+      ctx.ui.out(ctx.ui.style('dim', `staging: ${formatInvocation(invocation, ctx.passthrough)}`))
+    },
+  })
   if (!staged.ok) return staged
 
   const cleanup = await maybeReviewStagedContent(ctx, manifest, staged.data)
@@ -222,37 +226,7 @@ async function promptForOptionalMetadata(ctx: CommandContext, manifest: Manifest
   return parseManifest(serializeManifest(next))
 }
 
-async function stageAndLock(ctx: CommandContext, name: string, manifest: Manifest): Promise<Result<StagedShare>> {
-  const staging = createStagingProject(ctx.cwd)
-  if (!staging.ok) return staging
-  const members: Record<string, SetLockMember> = {}
-  const failed: Array<{ locator: string; code: string; message: string }> = []
-  for (const locator of manifest.skills) {
-    ctx.ui.out(ctx.ui.style('dim', `staging: ${formatInvocation(buildAddInvocation(locator), ctx.passthrough)}`))
-    const resolved = await resolveMember(locator, {
-      cwd: staging.data,
-      runner: ctx.runner,
-      extraArgs: ctx.passthrough,
-      capture: ctx.ui.json,
-    })
-    if (resolved.ok) members[locator] = resolved.data
-    else failed.push({ locator, code: resolved.error.code, message: resolved.error.message })
-  }
-  if (failed.length > 0) {
-    rmSync(staging.data, { recursive: true, force: true })
-    return {
-      ok: false,
-      error: new SkillSetError(
-        ErrorCodes.INSTALL_FAILED,
-        `Cannot share ${JSON.stringify(name)} — ${failed.length} of ${plural(manifest.skills.length, 'member skill')} failed to resolve in a clean staging project:\n  - ${failed.map((f) => `${f.locator}: ${f.message}`).join('\n  - ')}`,
-        { hint: 'Fix the failing remote skill locators and try again.', data: { name, failed } },
-      ),
-    }
-  }
-  return { ok: true, data: { lock: createSetLock(name, manifest.version, members), staging: staging.data } }
-}
-
-async function maybeReviewStagedContent(ctx: CommandContext, manifest: Manifest, staged: StagedShare): Promise<Result<boolean>> {
+async function maybeReviewStagedContent(ctx: CommandContext, manifest: Manifest, staged: StagedManifest): Promise<Result<boolean>> {
   const mismatches = localContentMismatches(ctx.cwd, manifest, staged.lock)
   if (mismatches.length > 0) {
     ctx.ui.out(
@@ -276,45 +250,6 @@ async function maybeReviewStagedContent(ctx: CommandContext, manifest: Manifest,
     return { ok: true, data: false }
   }
   return { ok: true, data: true }
-}
-
-function localContentMismatches(
-  cwd: string,
-  manifest: Manifest,
-  lock: SetLock,
-): Array<{ locator: string; skill: string }> {
-  const mismatches: Array<{ locator: string; skill: string }> = []
-  for (const locator of manifest.skills) {
-    const staged = lock.skills[locator]
-    if (staged === undefined) continue
-    const local = locateMember(locator, { cwd })
-    if (!local.ok) continue
-    if (local.data.computedHash !== staged.computedHash) mismatches.push({ locator, skill: local.data.skill })
-  }
-  return mismatches
-}
-
-function createStagingProject(cwd: string): Result<string> {
-  try {
-    return { ok: true, data: mkdtempSync(join(tmpdir(), 'skill-set-share-')) }
-  } catch (cause) {
-    try {
-      const fallbackRoot = join(cwd, SHARE_DIR, '.tmp')
-      mkdirSync(fallbackRoot, { recursive: true })
-      return { ok: true, data: mkdtempSync(join(fallbackRoot, 'skill-set-share-')) }
-    } catch (fallbackCause) {
-      return {
-        ok: false,
-        error: new SkillSetError(ErrorCodes.UNEXPECTED, 'Could not create a staging project for share export', {
-          hint: `Ensure the system temp directory is writable, or that ${SHARE_DIR}/.tmp can be created in this project.`,
-          data: {
-            tempError: cause instanceof Error ? cause.message : String(cause),
-            fallbackError: fallbackCause instanceof Error ? fallbackCause.message : String(fallbackCause),
-          },
-        }),
-      }
-    }
-  }
 }
 
 function findUnshareableMembers(cwd: string, manifest: Manifest): Array<{ locator: string; reason: string }> {

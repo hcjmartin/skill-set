@@ -706,11 +706,51 @@ describe('add — receipt verification', () => {
       fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
     })
     expect(code).toBe(0)
-    expect(out).toContain('author lock found — installed content will be verified against it')
+    expect(out).toContain('author lock found — remote content will be verified against it')
     expect(out).toContain('Verified 1/1 member skills against the author lock')
     // Adopted byte-for-byte, like the manifest: the bytes that verified are what land.
     expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'kit.skill-set.lock.json'), 'utf8')).toBe(authorLock)
     expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'SKILL-SET.md'), 'utf8')).toContain('Locked at set version 1.0.0.')
+  })
+
+  it('verifies pre-existing drifted skills from staged remote content, leaving local edits untouched', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'base', 'hcjmartin/gamma-repo@gamma', '--yes'])
+    appendFileSync(join(cwd, SKILLS_DIR, 'gamma', 'SKILL.md'), '\nlocal drift before adding a shared set\n')
+
+    const pairUrl = 'https://skill-set.md/pair.skill-set.json'
+    const pairManifest = `${JSON.stringify(
+      { name: 'pair', version: '1.0.0', skills: ['hcjmartin/gamma-repo@gamma', 'hcjmartin/delta-repo@delta'] },
+      null,
+      2,
+    )}\n`
+    const pairLock = serializeSetLock(
+      createSetLock('pair', '1.0.0', {
+        'hcjmartin/gamma-repo@gamma': { skill: 'gamma', computedHash: gammaHash },
+        'hcjmartin/delta-repo@delta': { skill: 'delta', computedHash: installedSkillHash('delta') },
+      }),
+    )
+    const runner: CommandRunner = async (command, args, opts) => {
+      const runCwd = opts?.cwd ?? cwd
+      if (runCwd === cwd && args[2] === 'add') {
+        const skillFlag = args.indexOf('--skill')
+        const skill = skillFlag === -1 ? args[3]!.split('/').pop()! : args[skillFlag + 1]!
+        if (existsSync(join(cwd, SKILLS_DIR, skill))) return { ok: true, data: { exitCode: 0, stdout: '', stderr: '' } }
+      }
+      return fake.runner(command, args, opts)
+    }
+
+    const { code, out } = await cli(cwd, { ...fake, runner }, ['add', pairUrl, '--yes'], {
+      fetcher: mapFetcher({ [pairUrl]: pairManifest, 'https://skill-set.md/pair.skill-set.lock.json': pairLock }),
+    })
+    expect(code).toBe(0)
+    expect(out).toContain('Verified 2/2 member skills against the author lock')
+    expect(out).toContain('Notice: 1 installed local skill differs from the verified remote content for this set')
+    expect(out).toContain('hcjmartin/gamma-repo@gamma (skill gamma)')
+    expect(readFileSync(join(cwd, SKILLS_DIR, 'gamma', 'SKILL.md'), 'utf8')).toContain('local drift')
+    expect(existsSync(join(cwd, SKILLS_DIR, 'delta'))).toBe(true)
+    expect(readFileSync(join(cwd, SETS_DIR, 'pair', 'pair.skill-set.lock.json'), 'utf8')).toBe(pairLock)
   })
 
   it('with no author lock published, --hash verifies the rollup and writes the computed lock', async () => {
@@ -798,6 +838,23 @@ describe('add — receipt verification', () => {
     expect(fake.calls).toHaveLength(0)
     expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+  })
+
+  it('rolls back the add when promised receipt verification cannot stage remote content', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const runner: CommandRunner = async (command, args, opts) => {
+      const runCwd = opts?.cwd ?? cwd
+      if (runCwd !== cwd && args[2] === 'add') return { ok: true, data: { exitCode: 2, stdout: '', stderr: 'stage failed' } }
+      return fake.runner(command, args, opts)
+    }
+    const { code, err } = await cli(cwd, { ...fake, runner }, ['add', manifestUrl, '--yes'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
+    })
+    expect(code).toBe(1)
+    expect(err).toContain('Cannot verify receipt for set "kit"')
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+    expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
   })
 
   it('a #sha256= fragment pins like --hash and is stripped from the fetch and the recorded source', async () => {
@@ -961,7 +1018,7 @@ describe('add — receipt verification', () => {
     const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--hash', `sha256:${kitSetHash}`, '--dry-run'], { fetcher })
     expect(code).toBe(0)
     expect(out).toContain(`would verify: set hash against sha256:${kitSetHash}`)
-    expect(out).toContain(`would verify: installed content against the author lock at ${sidecarUrl}, if published`)
+    expect(out).toContain(`would verify: remote content against the author lock at ${sidecarUrl}, if published`)
     expect(fetched).toEqual([manifestUrl])
     expect(fake.calls).toHaveLength(0)
     expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)

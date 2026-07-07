@@ -4,5 +4,7 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page"
-  }
+  },
+  "workers_dev": false,
+  "routes": [{ "pattern": "skill-set.md", "custom_domain": true }]
 }

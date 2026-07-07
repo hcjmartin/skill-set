@@ -9,3 +9,5 @@ packages/cli/schema/
 *.tsbuildinfo
 .DS_Store
 .claude
+# local-only operational notes, never tracked
+.docs/

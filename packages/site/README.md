@@ -38,20 +38,7 @@ pnpm --filter @skill-set/site preview   # serve the built output locally
 pnpm --filter @skill-set/site deploy    # build + wrangler deploy (needs a Cloudflare login)
 ```
 
-For a manual deploy, `wrangler` prompts for browser login, or reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment.
-
-## Deploying — one-time Cloudflare setup
-
-The site lives on a Cloudflare account dedicated to this project, so its CI token cannot touch unrelated Workers. `skill-sets.md` is **not** part of this site: it is reserved for the skill-sets directory, a separate project on its own account with its own deployment. It is never a redirect or alias for `skill-set.md` (the CLI's `ALLOWED_HOSTS` lists both because the directory will serve manifests).
-
-1. **Add the zone.** Add `skill-set.md` as a zone on the account and point its nameservers at Cloudflare (nic.md applies nameserver changes on its hourly registry update).
-2. **Create an API token.** Cloudflare dashboard → My Profile → API Tokens → Create Token → Custom token with a single permission: Account → Workers Scripts → Edit, scoped to the account. The deploy needs nothing zone-level; the domain is bound once in the dashboard (step 4). The account ID is on the zone's overview page.
-3. **Set the GitHub secrets.** In the `hcjmartin/skill-set` repo settings, add:
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-
-   The deploy workflow (`.github/workflows/deploy-site.yml`) runs on pushes to `main` that touch `packages/site/` or `spec/`, and on manual dispatch. It skips deployment cleanly while the secrets are absent, and verifies the built schema endpoints are byte-identical to `spec/draft/` before deploying.
-4. **First deploy, then bind the domain.** The first successful deploy creates the `skill-set-site` Worker (a fresh account must pick its `workers.dev` subdomain first: Workers & Pages → your subdomain). Bind the canonical domain in the dashboard: Workers & Pages → `skill-set-site` → Settings → Domains & Routes → Add → Custom domain → `skill-set.md`. The binding persists across deploys. Alternatively a `"routes": [{ "pattern": "skill-set.md", "custom_domain": true }]` entry in `wrangler.jsonc` binds it on deploy, but then every deploy reconciles the binding through the zone API and the token also needs Zone → Workers Routes → Edit on `skill-set.md`.
+For a manual deploy, `wrangler` prompts for browser login, or reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment. Pushes to `main` that touch `packages/site/` or `spec/` deploy automatically via `.github/workflows/deploy-site.yml`, which skips cleanly until the Cloudflare secrets are set.
 
 ## Structure
 

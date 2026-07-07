@@ -24,6 +24,7 @@ skill-set/<version> (wraps skills@1.5, pinned)
 | [`install`](#install) | `install <set>` | Install members, skipping ones the lock already satisfies |
 | [`build`](#build) | `build [<set>] [--lock]` | Regenerate SKILL-SET.md files and the skill-sets.json index |
 | [`lock`](#lock) | `lock <set>` | Record each member's installed content in a set-lock |
+| [`share`](#share) | `share [<set>] [--manifest <path>] [--output <dir>]` | Export a shareable manifest and lock |
 | [`verify`](#verify) | `verify <set> [--frozen]` | Check installed members against the set (frozen: byte-exact) |
 | [`update`](#update) | `update <set>` | Update members via the skills CLI, then re-lock |
 | [`remove`](#remove) | `remove <set>` | Remove a set definition, optionally remove skills not otherwise in use |
@@ -69,6 +70,16 @@ skill-set lock <set>
 ```
 
 Writes `<set>.skill-set.lock.json`: for every member, the installed skill name, its content hash (SHA-256 over the skill folder, as defined by [the spec](/spec/#6-member-content-hash)), and the resolver-reported source and ref, plus a rollup `setHash` for the whole set. Every member must be installed first; missing members are reported all at once.
+
+### share
+
+```shellscript
+skill-set share [<set>] [--manifest <path>] [--output <dir>]
+```
+
+Prepares a set for distribution. It takes a local set by name or a hand-written manifest (`--manifest`), and offers to fill in any missing description, author, and homepage. Every member is re-fetched into a throwaway clean project and hashed there, so the exported set-lock records the content the locators actually deliver — not your local, possibly-edited skill folders. A notice names any installed skill that differs from the fetched content, and members with local-only sources cannot be shared and are reported.
+
+The manifest and lock are written to `.agents/skills/skill-sets/_share/<set>/` (or `--output <dir>`). Publish the two together so a recipient's `add` finds the sidecar lock, or hand out a validating install command carrying the `#sha256=<setHash>` fragment.
 
 ### verify
 

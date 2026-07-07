@@ -2,6 +2,7 @@ import { ErrorCodes, SkillSetError } from './errors.ts'
 import { compareUtf8 } from './json.ts'
 import { LOCK_SUFFIX, type SetLock } from './lock.ts'
 import { MANIFEST_SUFFIX, type Manifest } from './manifest.ts'
+import { plural } from './text.ts'
 
 export const SKILL_SET_MD_FILENAME = 'SKILL-SET.md'
 export const INDEX_FILENAME = 'skill-sets.json'
@@ -41,8 +42,7 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
   }
 
   const n = manifest.skills.length
-  const plural = n === 1 ? 'skill' : 'skills'
-  const trigger = `A set of ${n} agent ${plural}. Use when reviewing, installing, verifying, or updating the "${manifest.name}" skill set.`
+  const trigger = `A set of ${plural(n, 'agent skill')}. Use when reviewing, installing, verifying, or updating the "${manifest.name}" skill set.`
   const description = manifest.description === undefined ? trigger : `${manifest.description} ${trigger}`
 
   // Every scalar is JSON-quoted: valid set names like "no" or "123" would otherwise
@@ -87,7 +87,7 @@ export function generateSkillSetMd(manifest: Manifest, opts: GenerateOptions = {
   lines.push(
     '## Updates',
     '',
-    `This set bundles ${n} ${plural}, as specified in \`${manifest.name}${MANIFEST_SUFFIX}\`. Changes should be made to the manifest, not this file.`,
+    `This set bundles ${plural(n, 'skill')}, as specified in \`${manifest.name}${MANIFEST_SUFFIX}\`. Changes should be made to the manifest, not this file.`,
     '',
   )
 

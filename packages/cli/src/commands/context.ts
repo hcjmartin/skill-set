@@ -2,6 +2,8 @@ import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import type { CommandRunner, SkillsInvocation } from '../resolver.ts'
 import type { Ui } from '../ui.ts'
 
+export { plural } from '../text.ts'
+
 export interface CommandContext {
   cwd: string
   ui: Ui
@@ -15,10 +17,6 @@ export interface CommandContext {
   passthrough: readonly string[]
   /** Print what would run or be written, change nothing, spawn nothing. */
   dryRun: boolean
-}
-
-export function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
 /** One-line rendering of an upstream invocation, for provenance labels and --dry-run. */

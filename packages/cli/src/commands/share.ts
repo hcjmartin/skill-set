@@ -5,7 +5,7 @@ import { LOCK_SUFFIX, serializeSetLock } from '../lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { SETS_DIR, setPaths } from '../project.ts'
 import { buildAddInvocation, parseLocator } from '../resolver.ts'
-import { localContentMismatches, removeStagingProject, stageManifestMembers, type StagedManifest } from '../staging.ts'
+import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers, type StagedManifest } from '../staging.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const SHARE_USAGE = 'skill-set share [<set>] [--manifest <path>] [--output <dir>]'
@@ -78,7 +78,8 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
   })
   if (!staged.ok) return staged
 
-  const cleanup = await maybeReviewStagedContent(ctx, manifest, staged.data)
+  const localMismatches = localContentMismatches(ctx.cwd, manifest, staged.data.lock)
+  const cleanup = await maybeReviewStagedContent(ctx, staged.data, localMismatches)
   if (!cleanup.ok) {
     removeStagingProject(ctx.cwd, staged.data.staging)
     return cleanup
@@ -111,6 +112,7 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
         lock: displayPath(ctx.cwd, lockPath),
         setHash: staged.data.lock.setHash,
         members: manifest.skills.length,
+        ...(localMismatches.length === 0 ? {} : { localMismatches }),
         ...(cleanup.data === true ? {} : { stagingKept: displayPath(ctx.cwd, staged.data.staging) }),
       },
     }
@@ -226,18 +228,15 @@ async function promptForOptionalMetadata(ctx: CommandContext, manifest: Manifest
   return parseManifest(serializeManifest(next))
 }
 
-async function maybeReviewStagedContent(ctx: CommandContext, manifest: Manifest, staged: StagedManifest): Promise<Result<boolean>> {
-  const mismatches = localContentMismatches(ctx.cwd, manifest, staged.lock)
-  if (mismatches.length > 0) {
-    ctx.ui.out(
-      ctx.ui.style(
-        'yellow',
-        `Notice: ${plural(mismatches.length, 'installed local skill')} ${mismatches.length === 1 ? 'differs' : 'differ'} from the fetched remote content used for this share lock:`,
-      ),
-    )
-    for (const mismatch of mismatches) ctx.ui.out(`  - ${mismatch.locator} (skill ${mismatch.skill})`)
-    ctx.ui.out(ctx.ui.style('dim', 'The share lock will use the fetched remote content.'))
-  }
+async function maybeReviewStagedContent(
+  ctx: CommandContext,
+  staged: StagedManifest,
+  mismatches: ReadonlyArray<{ locator: string; skill: string }>,
+): Promise<Result<boolean>> {
+  reportLocalDrift(ctx.ui, mismatches, {
+    source: 'the fetched remote content used for this share lock',
+    followUp: 'The share lock will use the fetched remote content.',
+  })
 
   if (!ctx.ui.interactive || ctx.ui.yes || ctx.ui.json) return { ok: true, data: true }
   ctx.ui.out('Staged skill contents used for this share lock are at:')

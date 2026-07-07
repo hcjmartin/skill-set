@@ -595,6 +595,20 @@ describe('share', () => {
     expect(readFileSync(join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md'), 'utf8')).toContain('local mutation')
   })
 
+  it('--json surfaces the local-vs-remote drift the human notice reports', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'portable', 'hcjmartin/alpha-repo@alpha', '--yes'])
+    appendFileSync(join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md'), '\nlocal mutation that should not enter the share lock\n')
+
+    const { code, out } = await cli(cwd, fake, ['share', 'portable', '--yes', '--json'])
+    expect(code).toBe(0)
+    const envelope = JSON.parse(out) as {
+      data: { localMismatches?: Array<{ locator: string; skill: string }> }
+    }
+    expect(envelope.data.localMismatches).toEqual([{ locator: 'hcjmartin/alpha-repo@alpha', skill: 'alpha' }])
+  })
+
   it('accepts a hand-written manifest path, output path, and optional metadata prompts', async () => {
     const cwd = project()
     const fake = fakeSkills(cwd)

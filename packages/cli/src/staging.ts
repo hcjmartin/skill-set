@@ -6,6 +6,8 @@ import { createSetLock, type SetLock, type SetLockMember } from './lock.ts'
 import type { Manifest } from './manifest.ts'
 import { SETS_DIR } from './project.ts'
 import { buildAddInvocation, locateMember, resolveMember, type CommandRunner, type SkillsInvocation } from './resolver.ts'
+import { plural } from './text.ts'
+import type { Ui } from './ui.ts'
 
 const STAGING_DIR = `${SETS_DIR}/.staging`
 const STAGING_PREFIX = 'skill-set-staging-'
@@ -114,8 +116,21 @@ export function localContentMismatches(
   return mismatches
 }
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`
+/** The local-vs-remote drift notice shared by add and share after a staged verification. */
+export function reportLocalDrift(
+  ui: Ui,
+  mismatches: ReadonlyArray<{ locator: string; skill: string }>,
+  opts: { source: string; followUp: string },
+): void {
+  if (mismatches.length === 0) return
+  ui.out(
+    ui.style(
+      'yellow',
+      `Notice: ${plural(mismatches.length, 'installed local skill')} ${mismatches.length === 1 ? 'differs' : 'differ'} from ${opts.source}:`,
+    ),
+  )
+  for (const mismatch of mismatches) ui.out(`  - ${mismatch.locator} (skill ${mismatch.skill})`)
+  ui.out(ui.style('dim', opts.followUp))
 }
 
 function removeIfEmpty(path: string): void {

@@ -5,7 +5,7 @@ import { createSetLock, LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLoc
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
 import { parseLocator, SKILLS_DIR } from '../resolver.ts'
-import { localContentMismatches, removeStagingProject, stageManifestMembers } from '../staging.ts'
+import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers } from '../staging.ts'
 import { installSet } from './install.ts'
 import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
@@ -274,16 +274,10 @@ async function verifyReceipt(
   }
 
   const localMismatches = stagedMembers.length === 0 ? [] : localContentMismatches(ctx.cwd, manifest, finalLock)
-  if (localMismatches.length > 0) {
-    ctx.ui.out(
-      ctx.ui.style(
-        'yellow',
-        `Notice: ${plural(localMismatches.length, 'installed local skill')} ${localMismatches.length === 1 ? 'differs' : 'differ'} from the verified remote content for this set:`,
-      ),
-    )
-    for (const mismatch of localMismatches) ctx.ui.out(`  - ${mismatch.locator} (skill ${mismatch.skill})`)
-    ctx.ui.out(ctx.ui.style('dim', 'The set lock records the verified remote content. Use verify --frozen to check local on-disk drift.'))
-  }
+  reportLocalDrift(ctx.ui, localMismatches, {
+    source: 'the verified remote content for this set',
+    followUp: 'The set lock records the verified remote content. Use verify --frozen to check local on-disk drift.',
+  })
 
   const lockPath = `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}`
   if (sidecar !== undefined) {

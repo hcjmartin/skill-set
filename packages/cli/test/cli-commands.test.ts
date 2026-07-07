@@ -680,7 +680,7 @@ describe('share', () => {
   })
 })
 
-describe('add — receipt verification', () => {
+describe('add — shared-set verification', () => {
   const manifestUrl = 'https://skill-set.md/kit.skill-set.json'
   const sidecarUrl = 'https://skill-set.md/kit.skill-set.lock.json'
   const kitManifest = `${JSON.stringify(
@@ -708,6 +708,7 @@ describe('add — receipt verification', () => {
     expect(code).toBe(0)
     expect(out).toContain('author lock found — remote content will be verified against it')
     expect(out).toContain('Verified 1/1 member skills against the author lock')
+    expect(fake.calls).toHaveLength(1)
     // Adopted byte-for-byte, like the manifest: the bytes that verified are what land.
     expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'kit.skill-set.lock.json'), 'utf8')).toBe(authorLock)
     expect(readFileSync(join(cwd, SETS_DIR, 'kit', 'SKILL-SET.md'), 'utf8')).toContain('Locked at set version 1.0.0.')
@@ -746,6 +747,7 @@ describe('add — receipt verification', () => {
     })
     expect(code).toBe(0)
     expect(out).toContain('Verified 2/2 member skills against the author lock')
+    expect(out).toContain('1 member skill already installed; fetching published content to verify this set without changing your installed copies.')
     expect(out).toContain('Notice: 1 installed local skill differs from the verified remote content for this set')
     expect(out).toContain('hcjmartin/gamma-repo@gamma (skill gamma)')
     expect(readFileSync(join(cwd, SKILLS_DIR, 'gamma', 'SKILL.md'), 'utf8')).toContain('local drift')
@@ -774,10 +776,47 @@ describe('add — receipt verification', () => {
       fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
     })
     expect(code).toBe(0)
-    const envelope = JSON.parse(out.trim()) as { ok: boolean; data: { verified: string; added: boolean } }
+    const envelope = JSON.parse(out.trim()) as {
+      ok: boolean
+      data: {
+        verified: string
+        added: boolean
+        detail: { verification: { stagedFallback: boolean; stagedMembers: string[]; localMismatches: unknown[] } }
+      }
+    }
     expect(envelope.ok).toBe(true)
     expect(envelope.data.added).toBe(true)
     expect(envelope.data.verified).toBe('both')
+    expect(envelope.data.detail.verification).toEqual({ stagedFallback: false, stagedMembers: [], localMismatches: [] })
+  })
+
+  it('--json groups fallback verification details under detail', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'base', 'hcjmartin/gamma-repo@gamma', '--yes'])
+    appendFileSync(join(cwd, SKILLS_DIR, 'gamma', 'SKILL.md'), '\nlocal drift before adding a shared set\n')
+    const runner: CommandRunner = async (command, args, opts) => {
+      const runCwd = opts?.cwd ?? cwd
+      if (runCwd === cwd && args[2] === 'add') {
+        const skillFlag = args.indexOf('--skill')
+        const skill = skillFlag === -1 ? args[3]!.split('/').pop()! : args[skillFlag + 1]!
+        if (existsSync(join(cwd, SKILLS_DIR, skill))) return { ok: true, data: { exitCode: 0, stdout: '', stderr: '' } }
+      }
+      return fake.runner(command, args, opts)
+    }
+
+    const { code, out } = await cli(cwd, { ...fake, runner }, ['add', manifestUrl, '--yes', '--json'], {
+      fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
+    })
+    expect(code).toBe(0)
+    const envelope = JSON.parse(out.trim()) as {
+      ok: boolean
+      data: { detail: { verification: { stagedFallback: boolean; stagedMembers: string[]; localMismatches: Array<{ locator: string; skill: string }> } } }
+    }
+    expect(envelope.ok).toBe(true)
+    expect(envelope.data.detail.verification.stagedFallback).toBe(true)
+    expect(envelope.data.detail.verification.stagedMembers).toEqual(['hcjmartin/gamma-repo@gamma'])
+    expect(envelope.data.detail.verification.localMismatches).toEqual([{ locator: 'hcjmartin/gamma-repo@gamma', skill: 'gamma' }])
   })
 
   it('a mismatched member is named with both hashes, and nothing is kept', async () => {
@@ -787,8 +826,9 @@ describe('add — receipt verification', () => {
       fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: wrongLock }),
     })
     expect(code).toBe(3)
+    expect(err).toContain('The skill set did not match the published lock.')
     expect(err).toContain(`hcjmartin/gamma-repo@gamma (skill gamma): expected ${'a'.repeat(64)}, computed ${gammaHash}`)
-    expect(err).toContain('Nothing was kept')
+    expect(err).toContain('Nothing was kept: the set files were removed.')
     // Rollback: the installed skill, its upstream lock entry, and the set's own files are gone.
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
     expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
@@ -796,7 +836,7 @@ describe('add — receipt verification', () => {
     expect('gamma' in upstream.skills).toBe(false)
   })
 
-  it('--json reports the receipt mismatch structurally with its own error code', async () => {
+  it('--json reports the verification mismatch structurally with its own error code', async () => {
     const cwd = project()
     const fake = fakeSkills(cwd)
     const { code, out } = await cli(cwd, fake, ['add', manifestUrl, '--yes', '--json'], {
@@ -821,6 +861,7 @@ describe('add — receipt verification', () => {
       fetcher: mapFetcher({ [manifestUrl]: kitManifest }),
     })
     expect(code).toBe(3)
+    expect(err).toContain('The skill set did not match the verification hash.')
     expect(err).toContain(`set hash: expected ${'b'.repeat(64)}, computed ${kitSetHash}`)
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
     expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
@@ -840,20 +881,28 @@ describe('add — receipt verification', () => {
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
   })
 
-  it('rolls back the add when promised receipt verification cannot stage remote content', async () => {
+  it('rolls back the add when verification needs fallback staging but remote content cannot be fetched', async () => {
     const cwd = project()
     const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'base', 'hcjmartin/gamma-repo@gamma', '--yes'])
+    appendFileSync(join(cwd, SKILLS_DIR, 'gamma', 'SKILL.md'), '\nlocal drift before adding a shared set\n')
     const runner: CommandRunner = async (command, args, opts) => {
       const runCwd = opts?.cwd ?? cwd
+      if (runCwd === cwd && args[2] === 'add') {
+        const skillFlag = args.indexOf('--skill')
+        const skill = skillFlag === -1 ? args[3]!.split('/').pop()! : args[skillFlag + 1]!
+        if (existsSync(join(cwd, SKILLS_DIR, skill))) return { ok: true, data: { exitCode: 0, stdout: '', stderr: '' } }
+      }
       if (runCwd !== cwd && args[2] === 'add') return { ok: true, data: { exitCode: 2, stdout: '', stderr: 'stage failed' } }
       return fake.runner(command, args, opts)
     }
     const { code, err } = await cli(cwd, { ...fake, runner }, ['add', manifestUrl, '--yes'], {
       fetcher: mapFetcher({ [manifestUrl]: kitManifest, [sidecarUrl]: authorLock }),
     })
-    expect(code).toBe(1)
-    expect(err).toContain('Cannot verify receipt for set "kit"')
-    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+    expect(code).toBe(3)
+    expect(err).toContain('The skill set "kit" could not be verified — remote skill content could not be fetched for checking.')
+    expect(err).toContain('Nothing was kept: the set files were removed.')
+    expect(readFileSync(join(cwd, SKILLS_DIR, 'gamma', 'SKILL.md'), 'utf8')).toContain('local drift')
     expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
   })
 

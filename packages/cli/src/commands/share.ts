@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import { LOCK_SUFFIX, serializeSetLock } from '../lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { SETS_DIR, setPaths } from '../project.ts'
 import { buildAddInvocation, parseLocator } from '../resolver.ts'
-import { localContentMismatches, stageManifestMembers, type StagedManifest } from '../staging.ts'
+import { localContentMismatches, removeStagingProject, stageManifestMembers, type StagedManifest } from '../staging.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const SHARE_USAGE = 'skill-set share [<set>] [--manifest <path>] [--output <dir>]'
@@ -80,7 +80,7 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
 
   const cleanup = await maybeReviewStagedContent(ctx, manifest, staged.data)
   if (!cleanup.ok) {
-    rmSync(staged.data.staging, { recursive: true, force: true })
+    removeStagingProject(ctx.cwd, staged.data.staging)
     return cleanup
   }
 
@@ -115,7 +115,7 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
       },
     }
   } finally {
-    if (cleanup.data) rmSync(staged.data.staging, { recursive: true, force: true })
+    if (cleanup.data) removeStagingProject(ctx.cwd, staged.data.staging)
   }
 }
 

@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
-import { LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLock } from '../lock.ts'
+import { createSetLock, LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLock } from '../lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
 import { parseLocator, SKILLS_DIR } from '../resolver.ts'
-import { localContentMismatches, stageManifestMembers } from '../staging.ts'
+import { localContentMismatches, removeStagingProject, stageManifestMembers } from '../staging.ts'
 import { installSet } from './install.ts'
+import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const ADD_USAGE = 'skill-set add <url|path> [--hash sha256:<hex>]'
@@ -16,6 +17,14 @@ const MAX_REDIRECTS = 5
 const MAX_BYTES = 1024 * 1024
 
 const HEX64 = /^[a-f0-9]{64}$/
+
+type VerifiedAgainst = 'sidecar' | 'hash' | 'both'
+
+interface VerificationDetail {
+  stagedFallback: boolean
+  stagedMembers: string[]
+  localMismatches: Array<{ locator: string; skill: string }>
+}
 
 /**
  * Hosts that serve skill-set manifests without a pre-fetch warning. Any other host prompts
@@ -171,11 +180,13 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const install = await installSet(ctx, name)
   if (!install.ok) return install
 
-  let verified: 'sidecar' | 'hash' | 'both' | null = null
+  let verified: VerifiedAgainst | null = null
+  let detail: { verification: VerificationDetail } | undefined
   if (sidecar.data !== undefined || hash !== undefined) {
     const outcome = await verifyReceipt(ctx, manifest.data, sidecar.data, hash, preFolders)
     if (!outcome.ok) return outcome
-    verified = outcome.data
+    verified = outcome.data.verifiedAgainst
+    detail = { verification: outcome.data.detail }
   }
 
   const lock = loadLockIfPresent(ctx.cwd, name)
@@ -186,13 +197,12 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const index = writeIndex(ctx.cwd, origin)
   if (!index.ok) return index
 
-  return { ok: true, data: { name, added: true, verified, install: install.data } }
+  return { ok: true, data: { name, added: true, verified, install: install.data, ...(detail === undefined ? {} : { detail }) } }
 }
 
 /**
- * Receipt verification: resolve every member again in a clean staging project, compare that
- * remote-delivered content against the author lock and/or pinned rollup, and either adopt/write
- * the set-lock or roll this add back entirely. Returns which trust source verified.
+ * Verifies the installed result first. If pre-existing local skills caused the mismatch, resolve
+ * only those members again in staging and verify against that fetched content instead.
  */
 async function verifyReceipt(
   ctx: CommandContext,
@@ -200,93 +210,176 @@ async function verifyReceipt(
   sidecar: { lock: SetLock; text: string } | undefined,
   hash: string | undefined,
   preFolders: ReadonlySet<string>,
-): Promise<Result<'sidecar' | 'hash' | 'both'>> {
+): Promise<Result<{ verifiedAgainst: VerifiedAgainst; detail: VerificationDetail }>> {
   const name = manifest.name
   const members = manifest.skills
-  const staged = await stageManifestMembers(manifest, {
-    cwd: ctx.cwd,
-    runner: ctx.runner,
-    extraArgs: ctx.passthrough,
-    capture: ctx.ui.json,
-    label: `verify receipt for set ${JSON.stringify(name)}`,
-    onStage: (_locator, invocation) => {
-      ctx.ui.out(ctx.ui.style('dim', `verifying remote content: ${formatInvocation(invocation, ctx.passthrough)}`))
-    },
-  })
-  if (!staged.ok) {
-    // Verification was promised but cannot run — keep nothing rather than keep unverified content.
-    rollbackAdd(ctx.cwd, name, preFolders)
-    return staged
-  }
-  const computed = staged.data.lock
 
-  try {
-    const lines: string[] = []
-    const mismatches: Array<Record<string, unknown>> = []
-    if (sidecar !== undefined) {
-      for (const locator of members) {
-        const actual = computed.skills[locator]!
-        const expected = sidecar.lock.skills[locator]
-        if (expected === undefined) {
-          lines.push(`${locator} (skill ${actual.skill}): not recorded in the author lock`)
-          mismatches.push({ locator, skill: actual.skill, computed: actual.computedHash })
-        } else if (expected.computedHash !== actual.computedHash) {
-          lines.push(`${locator} (skill ${actual.skill}): expected ${expected.computedHash}, computed ${actual.computedHash}`)
-          mismatches.push({ locator, skill: actual.skill, expected: expected.computedHash, computed: actual.computedHash })
-        }
-      }
-      // Locator keys in the author lock are remote content — surplus entries are counted, not echoed.
-      const surplus = Object.keys(sidecar.lock.skills).filter((locator) => !members.includes(locator)).length
-      if (surplus > 0) {
-        lines.push(`the author lock records ${plural(surplus, 'member')} this manifest does not list`)
-        mismatches.push({ surplusLockMembers: surplus })
-      }
-    } else if (computed.setHash !== hash) {
-      lines.push(`set hash: expected ${hash!}, computed ${computed.setHash}`)
-      mismatches.push({ expected: hash, computed: computed.setHash })
-    }
+  const computed = lockSet(ctx.cwd, name, manifest, { dryRun: true })
+  if (!computed.ok) return verificationCouldNotRun(ctx, name, preFolders, computed.error, 'skill content could not be checked')
 
-    const verifiedAgainst = sidecar !== undefined ? (hash !== undefined ? 'both' : 'sidecar') : 'hash'
-    if (lines.length > 0) {
-      const removed = rollbackAdd(ctx.cwd, name, preFolders)
-      return {
-        ok: false,
-        error: new SkillSetError(
-          ErrorCodes.RECEIPT_MISMATCH,
-          `Remote content for set ${JSON.stringify(name)} does not match what the share promised — ${plural(lines.length, 'mismatch')}:\n  - ${lines.join('\n  - ')}\nNothing was kept: the set's files and the ${plural(removed.length, 'skill folder')} this add installed were removed.`,
-          {
-            hint: 'The source content may have changed since the share was published. Re-check the link with the set author before retrying.',
-            data: { name, verifiedAgainst, mismatches, removedSkills: removed },
-          },
-        ),
-      }
-    }
+  let finalLock = computed.data
+  let evaluation = evaluateReceipt(manifest, finalLock, sidecar, hash)
+  let stagedMembers: string[] = []
 
-    const localMismatches = localContentMismatches(ctx.cwd, manifest, computed)
-    if (localMismatches.length > 0) {
+  if (evaluation.lines.length > 0) {
+    const preExistingLocators = members.filter((locator) => {
+      const skill = computed.data.skills[locator]?.skill
+      return skill !== undefined && preFolders.has(skill)
+    })
+
+    if (preExistingLocators.length > 0) {
       ctx.ui.out(
         ctx.ui.style(
-          'yellow',
-          `Notice: ${plural(localMismatches.length, 'installed local skill')} ${localMismatches.length === 1 ? 'differs' : 'differ'} from the verified remote content for this set:`,
+          'dim',
+          `${plural(preExistingLocators.length, 'member skill')} already installed; fetching published content to verify this set without changing your installed copies.`,
         ),
       )
-      for (const mismatch of localMismatches) ctx.ui.out(`  - ${mismatch.locator} (skill ${mismatch.skill})`)
-      ctx.ui.out(ctx.ui.style('dim', 'The set lock records the verified remote content. Use verify --frozen to check local on-disk drift.'))
+      const staged = await stageManifestMembers(manifest, {
+        cwd: ctx.cwd,
+        runner: ctx.runner,
+        extraArgs: ctx.passthrough,
+        capture: ctx.ui.json,
+        locators: preExistingLocators,
+        label: `verify set ${JSON.stringify(name)}`,
+        onStage: (_locator, invocation) => {
+          ctx.ui.out(ctx.ui.style('dim', `verifying published content: ${formatInvocation(invocation, ctx.passthrough)}`))
+        },
+      })
+      if (!staged.ok) {
+        return verificationCouldNotRun(ctx, name, preFolders, staged.error, 'remote skill content could not be fetched for checking')
+      }
+      try {
+        finalLock = mergeStagedMembers(manifest, computed.data, staged.data.lock, preExistingLocators)
+        evaluation = evaluateReceipt(manifest, finalLock, sidecar, hash)
+        stagedMembers = preExistingLocators
+      } finally {
+        removeStagingProject(ctx.cwd, staged.data.staging)
+      }
     }
-
-    const lockPath = `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}`
-    if (sidecar !== undefined) {
-      // Adopt the author's lock verbatim, like the manifest: the bytes that verified are what land.
-      writeFileSync(setPaths(ctx.cwd, name).lock, sidecar.text)
-      ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified ${members.length}/${members.length} member skills against the author lock — adopted ${lockPath}`)
-    } else {
-      writeFileSync(setPaths(ctx.cwd, name).lock, serializeSetLock(computed))
-      ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified: set hash matches the pinned sha256 — wrote ${lockPath}`)
-    }
-    return { ok: true, data: verifiedAgainst }
-  } finally {
-    rmSync(staged.data.staging, { recursive: true, force: true })
   }
+
+  if (evaluation.lines.length > 0) {
+    const removed = rollbackAdd(ctx.cwd, name, preFolders)
+    return {
+      ok: false,
+      error: new SkillSetError(
+        ErrorCodes.RECEIPT_MISMATCH,
+        `${mismatchMessage(sidecar)} ${plural(evaluation.lines.length, 'mismatch')}:\n  - ${evaluation.lines.join('\n  - ')}\nNothing was kept: the set files were removed.`,
+        {
+          hint: 'The source content may have changed since the share was published. Re-check the link with the set author before retrying.',
+          data: { name, verifiedAgainst: evaluation.verifiedAgainst, mismatches: evaluation.mismatches, removedSkills: removed },
+        },
+      ),
+    }
+  }
+
+  const localMismatches = stagedMembers.length === 0 ? [] : localContentMismatches(ctx.cwd, manifest, finalLock)
+  if (localMismatches.length > 0) {
+    ctx.ui.out(
+      ctx.ui.style(
+        'yellow',
+        `Notice: ${plural(localMismatches.length, 'installed local skill')} ${localMismatches.length === 1 ? 'differs' : 'differ'} from the verified remote content for this set:`,
+      ),
+    )
+    for (const mismatch of localMismatches) ctx.ui.out(`  - ${mismatch.locator} (skill ${mismatch.skill})`)
+    ctx.ui.out(ctx.ui.style('dim', 'The set lock records the verified remote content. Use verify --frozen to check local on-disk drift.'))
+  }
+
+  const lockPath = `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}`
+  if (sidecar !== undefined) {
+    // Adopt the author's lock verbatim, like the manifest: the bytes that verified are what land.
+    writeFileSync(setPaths(ctx.cwd, name).lock, sidecar.text)
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified ${members.length}/${members.length} member skills against the author lock — adopted ${lockPath}`)
+  } else {
+    writeFileSync(setPaths(ctx.cwd, name).lock, serializeSetLock(finalLock))
+    ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified: set hash matches the pinned sha256 — wrote ${lockPath}`)
+  }
+  return {
+    ok: true,
+    data: {
+      verifiedAgainst: evaluation.verifiedAgainst,
+      detail: { stagedFallback: stagedMembers.length > 0, stagedMembers, localMismatches },
+    },
+  }
+}
+
+function evaluateReceipt(
+  manifest: Manifest,
+  computed: SetLock,
+  sidecar: { lock: SetLock; text: string } | undefined,
+  hash: string | undefined,
+): { verifiedAgainst: VerifiedAgainst; lines: string[]; mismatches: Array<Record<string, unknown>> } {
+  const lines: string[] = []
+  const mismatches: Array<Record<string, unknown>> = []
+  if (sidecar !== undefined) {
+    for (const locator of manifest.skills) {
+      const actual = computed.skills[locator]!
+      const expected = sidecar.lock.skills[locator]
+      if (expected === undefined) {
+        lines.push(`${locator} (skill ${actual.skill}): not recorded in the author lock`)
+        mismatches.push({ locator, skill: actual.skill, computed: actual.computedHash })
+      } else if (expected.computedHash !== actual.computedHash) {
+        lines.push(`${locator} (skill ${actual.skill}): expected ${expected.computedHash}, computed ${actual.computedHash}`)
+        mismatches.push({ locator, skill: actual.skill, expected: expected.computedHash, computed: actual.computedHash })
+      }
+    }
+    // Locator keys in the author lock are remote content — surplus entries are counted, not echoed.
+    const surplus = Object.keys(sidecar.lock.skills).filter((locator) => !manifest.skills.includes(locator)).length
+    if (surplus > 0) {
+      lines.push(`the author lock records ${plural(surplus, 'member')} this manifest does not list`)
+      mismatches.push({ surplusLockMembers: surplus })
+    }
+  } else if (computed.setHash !== hash) {
+    lines.push(`set hash: expected ${hash!}, computed ${computed.setHash}`)
+    mismatches.push({ expected: hash, computed: computed.setHash })
+  }
+
+  return {
+    verifiedAgainst: sidecar !== undefined ? (hash !== undefined ? 'both' : 'sidecar') : 'hash',
+    lines,
+    mismatches,
+  }
+}
+
+function mergeStagedMembers(
+  manifest: Manifest,
+  base: SetLock,
+  staged: SetLock,
+  locators: readonly string[],
+): SetLock {
+  const skills = { ...base.skills }
+  for (const locator of locators) {
+    const member = staged.skills[locator]
+    if (member !== undefined) skills[locator] = member
+  }
+  return createSetLock(manifest.name, manifest.version, skills)
+}
+
+function verificationCouldNotRun(
+  ctx: CommandContext,
+  name: string,
+  preFolders: ReadonlySet<string>,
+  cause: SkillSetError,
+  reason: string,
+): Result<never> {
+  const removed = rollbackAdd(ctx.cwd, name, preFolders)
+  return {
+    ok: false,
+    error: new SkillSetError(
+      ErrorCodes.RECEIPT_MISMATCH,
+      `The skill set ${JSON.stringify(name)} could not be verified — ${reason}.\nNothing was kept: the set files were removed.`,
+      {
+        hint: 'Fix the remote skill locators and try again.',
+        data: { name, cause: { code: cause.code, message: cause.message }, removedSkills: removed },
+      },
+    ),
+  }
+}
+
+function mismatchMessage(sidecar: { lock: SetLock; text: string } | undefined): string {
+  return sidecar === undefined
+    ? 'The skill set did not match the verification hash.'
+    : 'The skill set did not match the published lock.'
 }
 
 /**

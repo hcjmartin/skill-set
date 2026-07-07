@@ -168,7 +168,7 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
 // The documented taxonomy: usage mistakes, lock drift, and cross-set conflicts are
 // machine-distinguishable; everything else is a plain error. Blocked confirmations and
 // a missing lock under --frozen are precondition-shaped, so they land with usage (2).
-// A receipt mismatch on add is content-not-as-promised, the same class as drift; JSON
+// A verification mismatch on add is content-not-as-verified, the same class as drift; JSON
 // consumers discriminate via error.code.
 function exitCodeFor(code: SkillSetErrorCode): number {
   if (code === ErrorCodes.USAGE || code === ErrorCodes.CONFIRM_REQUIRED || code === ErrorCodes.FROZEN_NO_LOCK) return 2

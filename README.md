@@ -6,7 +6,7 @@ A **skill-set** is a single JSON manifest — `<name>.skill-set.json` — listin
 
 This repo ships the open format (a normative convention plus JSON Schemas), reference CLI [`@skill-set/cli`](https://www.npmjs.com/package/@skill-set/cli) (command: `skill-set`), and an optional content-hash lock that makes a set's skill contents byte-exactly verifiable on another machine.
 
-The CLI wraps the [`skills`](https://github.com/vercel-labs/skills) CLI (rolling pinned version) for resolving and installing individual skills.
+The CLI wraps the [`skills`](https://github.com/vercel-labs/skills) CLI (pinned to an exact version, bumped deliberately) for resolving and installing individual skills.
 
 **Status: pre-release.** The format is in draft and the CLI is pre-1.0; both may still change.
 
@@ -61,7 +61,7 @@ In CI, frozen is already the default whenever a lock exists.
 
 The normative convention — manifest fields, validation rules, sharing semantics, the lock format, and the content-hash recipe lives at [spec/draft/README.md](spec/draft/README.md), written so a set can be authored, resolved, and verified without this CLI. 
 
-Documentation will live at [skill-set.md](https://skill-set.md) once the site is up.
+Documentation lives at [skill-set.md](https://skill-set.md).
 
 ## Naming
 

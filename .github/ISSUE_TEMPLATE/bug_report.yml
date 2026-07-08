@@ -1,0 +1,24 @@
+name: Bug report
+description: Something broke or behaved contrary to the docs
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and its full output (`--json` output welcome).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `skill-set --version`, plus Node version and OS.
+    validations:
+      required: true

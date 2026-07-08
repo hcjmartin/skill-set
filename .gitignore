@@ -1,6 +1,4 @@
 .flocker
-# local-only until the public flip
-CHANGELOG.md
 node_modules/
 dist/
 coverage/

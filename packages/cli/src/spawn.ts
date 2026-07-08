@@ -27,6 +27,8 @@ export async function runCommand(
     nodeOptions: {
       stdio: opts?.capture ? 'pipe' : 'inherit',
       cwd: opts?.cwd,
+      // Full env inherited deliberately: children run the user's npm toolchain, which needs
+      // PATH managers, proxies, and registry auth (SECURITY.md "Scope").
       env: opts?.env === undefined ? process.env : { ...process.env, ...opts.env },
     },
   })

@@ -76,6 +76,35 @@ describe('fetchManifest', () => {
     if (!result.ok) expect(result.error.message).toContain('MiB manifest cap')
   })
 
+  it('refuses an over-cap declared Content-Length before reading the body', async () => {
+    stub(() => new Response('tiny', { headers: { 'content-length': String(2 * 1024 * 1024) } }))
+    const result = await fetchManifest('https://example.test/a')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('MiB manifest cap')
+  })
+
+  it('reports a hung host as a timeout with the deadline, not a raw abort', async () => {
+    const timeout = new Error('The operation was aborted due to timeout')
+    timeout.name = 'TimeoutError'
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(timeout)))
+    const result = await fetchManifest('https://example.test/a')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('no response within 30s')
+  })
+
+  it('passes an abort deadline to every fetch', async () => {
+    let signal: unknown
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        signal = init?.signal
+        return new Response('{"name":"x"}')
+      }),
+    )
+    await fetchManifest('https://example.test/a')
+    expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
   it('fails a redirect that crosses to an unrecognised host, naming only the host', async () => {
     stub(() => redirect('https://evil.test/payload?MARKER-REDIRECT-INJ'))
     const result = await fetchManifest('https://skill-set.md/x.skill-set.json')

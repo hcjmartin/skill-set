@@ -80,7 +80,8 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
   const ours = sentinel === -1 ? [...argv] : [...argv.slice(0, sentinel)]
   const passthrough = sentinel === -1 ? [] : [...argv.slice(sentinel + 1)]
 
-  // Meta-flags are intercepted before any dispatch — `<verb> --help` must never execute (see CHANGELOG).
+  // Meta-flags are intercepted before any dispatch — upstream runs `update` even when passed
+  // `--help` (verified foot-gun); that bug class must be structurally impossible here.
   if (ours.length === 0 || ours.includes('--help') || ours.includes('-h')) {
     stdout.write(HELP)
     return 0

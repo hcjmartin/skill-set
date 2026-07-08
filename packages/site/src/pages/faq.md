@@ -55,13 +55,13 @@ Trust is layered, and each layer has a defined job:
 3. **When adding a shared set (optional, recommended for third-party sets)**: if the share URL carries a hash fragment (`…skill-set.json#sha256=<hash>`) or you pass `--hash`, and/or the author published their lock beside the manifest, `add` verifies the installed content against it. If an already-installed local copy does not match, `add` re-fetches that member in a clean staging project and checks the published content without changing your installed copy. Content that does not match the provided hash or the published lock is not kept — the set files are removed and the command fails.
 4. **After that, over time**: your committed lock plus `verify --frozen` (the CI default) catches any later drift, byte-exactly, member by member.
 
-Skill resolution itself is delegated to the pinned `skills@1.5` CLI with prompts suppressed — the trust decisions all happen in the layers above, not in the delegated fetch.
+Skill resolution itself is delegated to the pinned `skills@1.5.14` CLI with prompts suppressed — the trust decisions all happen in the layers above, not in the delegated fetch.
 
 One boundary to be clear about: hashes prove **integrity**, not **safety**. A verified set is exactly what its author locked — which says nothing about whether that content is a good idea to run. Review third-party sets (or use a skill scanner) before installing them, the same way you would vet any dependency.
 
 ## How does skill-set relate to the skills CLI?
 
-It is a companion, not a fork. The skills CLI resolves and installs individual skills; skill-set adds the set layer — named manifests, sharing by URL, locks, and verification. Every member resolution shells out to the pinned upstream (`npx skills@1.5`), and arguments after `--` pass through to it verbatim. Locators in a manifest are whatever `npx skills add` accepts.
+It is a companion, not a fork. The skills CLI resolves and installs individual skills; skill-set adds the set layer — named manifests, sharing by URL, locks, and verification. Every member resolution shells out to the pinned upstream (`npx skills@1.5.14`), and arguments after `--` pass through to it verbatim. Locators in a manifest are whatever `npx skills add` accepts.
 
 ## Is this the `skillset`, `skillsets`, or `skills-set` package on npm?
 

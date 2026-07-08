@@ -15,6 +15,7 @@ export const ADD_USAGE = 'skill-set add <url|path> [--hash sha256:<hex>]'
 /** Spec §3 fetch bounds: at most five redirects, at most 1 MiB of manifest. */
 const MAX_REDIRECTS = 5
 const MAX_BYTES = 1024 * 1024
+const FETCH_TIMEOUT_MS = 30_000
 
 const HEX64 = /^[a-f0-9]{64}$/
 
@@ -509,8 +510,11 @@ export async function fetchManifest(url: string): Promise<Result<string>> {
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     let response: Response
     try {
-      response = await fetch(current, { redirect: 'manual' })
+      response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
     } catch (cause) {
+      if (cause instanceof Error && cause.name === 'TimeoutError') {
+        return fetchFail(url, `no response within ${FETCH_TIMEOUT_MS / 1000}s`, 'Check the URL and your network, then retry.')
+      }
       return fetchFail(url, (cause as Error).message, 'Check the URL and your network, then retry.')
     }
     if (response.status >= 300 && response.status < 400) {
@@ -525,14 +529,27 @@ export async function fetchManifest(url: string): Promise<Result<string>> {
       continue
     }
     if (!response.ok) return fetchFail(url, `GET returned ${response.status}`)
-    // Manifests are small; the cap guards against pointing `add` at the wrong thing (spec §3).
-    const text = await response.text()
-    if (Buffer.byteLength(text, 'utf8') > MAX_BYTES) {
-      return fetchFail(url, `response exceeds the ${MAX_BYTES / 1024 / 1024} MiB manifest cap`)
-    }
-    return { ok: true, data: text }
+    return readCappedBody(url, response)
   }
   return fetchFail(url, `more than ${MAX_REDIRECTS} redirects`)
+}
+
+/**
+ * Manifests are small; the cap guards against pointing `add` at the wrong thing (spec §3).
+ * Enforced while streaming, so an oversized or unbounded body never buffers past the cap.
+ */
+async function readCappedBody(url: string, response: Response): Promise<Result<string>> {
+  const overCap = `response exceeds the ${MAX_BYTES / 1024 / 1024} MiB manifest cap`
+  if (Number(response.headers.get('content-length')) > MAX_BYTES) return fetchFail(url, overCap)
+  if (response.body === null) return { ok: true, data: '' }
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for await (const chunk of response.body) {
+    received += chunk.length
+    if (received > MAX_BYTES) return fetchFail(url, overCap)
+    chunks.push(chunk)
+  }
+  return { ok: true, data: Buffer.concat(chunks).toString('utf8') }
 }
 
 function fetchFail(url: string, reason: string, hint?: string): Result<never> {

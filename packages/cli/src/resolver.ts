@@ -7,8 +7,8 @@ import { parseSkillsLock } from './lock.ts'
 import { NAME_PATTERN } from './manifest.ts'
 import { runCommand, type SpawnOptions, type SpawnOutcome } from './spawn.ts'
 
-/** Upstream pin, minor-level: patch releases float in, minor/major bumps are deliberate. */
-export const SKILLS_PIN = '1.5'
+/** Upstream pin, exact: every bump is deliberate (the weekly compat job watches upstream drift). */
+export const SKILLS_PIN = '1.5.14'
 
 /** Where resolved skills land, relative to the project root (spec §4; upstream UNIVERSAL_SKILLS_DIR). */
 export const SKILLS_DIR = '.agents/skills'
@@ -64,7 +64,7 @@ export function buildAddInvocation(locator: string, opts?: { global?: boolean })
   args.push('--yes')
   if (opts?.global === true) args.push('--global')
   // Suppresses upstream telemetry events via its own opt-out; its audit fetch
-  // (add-skill.vercel.sh) is separate and not opt-out-able (see CHANGELOG).
+  // (add-skill.vercel.sh) is separate and not opt-out-able.
   const env: Record<string, string> = {}
   if (buildConfig.suppressUpstreamTelemetry) env.DISABLE_TELEMETRY = '1'
   return { command: 'npx', args, env }
@@ -254,8 +254,8 @@ export async function resolveMember(
   }
 
   // The upstream lock's computedHash is opaque here: for GitHub blob installs it is a
-  // server-side snapshot hash no local bytes can reproduce (see CHANGELOG). Our set-lock
-  // records the spec §6 hash of the installed folder instead.
+  // server-side snapshot hash no local bytes can reproduce (verified empirically; see
+  // test/compat.test.ts). Our set-lock records the spec §6 hash of the installed folder instead.
   return {
     ok: true,
     data: {

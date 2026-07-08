@@ -9,10 +9,10 @@ lede: The CLI ships as @skill-set/cli with a single bin, skill-set. Run it witho
 npx @skill-set/cli <command> [args] [flags] [-- <args for the skills CLI>]
 ```
 
-Resolution and installation of individual skills are delegated to the upstream [skills CLI](https://skills.sh), pinned to `skills@1.5`. `skill-set --version` prints both versions:
+Resolution and installation of individual skills are delegated to the upstream [skills CLI](https://skills.sh), pinned to `skills@1.5.14`. `skill-set --version` prints both versions:
 
 ```
-skill-set/<version> (wraps skills@1.5, pinned)
+skill-set/<version> (wraps skills@1.5.14, pinned)
 ```
 
 ## Commands
@@ -53,7 +53,7 @@ Hosts other than recognised skill-set providers prompt for confirmation before a
 skill-set install <set>
 ```
 
-Before anything installs, every set in the project is checked for members pinned to conflicting refs — a conflict aborts with exit code 4 (see the [FAQ](/faq/#what-happens-when-two-sets-want-the-same-skill)). Members whose locked content is already on disk byte-for-byte are skipped; the rest resolve one at a time through `npx skills@1.5 add <locator>`. The summary reports installed, skipped, and failed counts, and any member failure makes the whole command fail after attempting the rest.
+Before anything installs, every set in the project is checked for members pinned to conflicting refs — a conflict aborts with exit code 4 (see the [FAQ](/faq/#what-happens-when-two-sets-want-the-same-skill)). Members whose locked content is already on disk byte-for-byte are skipped; the rest resolve one at a time through `npx skills@1.5.14 add <locator>`. The summary reports installed, skipped, and failed counts, and any member failure makes the whole command fail after attempting the rest.
 
 ### build
 
@@ -100,7 +100,7 @@ In CI, frozen is the default whenever a set-lock exists; `--no-frozen` opts out.
 skill-set update <set>
 ```
 
-Updates every member through `npx skills@1.5 update <skills...> -p --yes`, then re-locks the set if a lock existed and regenerates the derived files. All members must be installed before anything updates.
+Updates every member through `npx skills@1.5.14 update <skills...> -p --yes`, then re-locks the set if a lock existed and regenerates the derived files. All members must be installed before anything updates.
 
 ### remove
 

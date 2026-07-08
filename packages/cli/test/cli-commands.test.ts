@@ -155,8 +155,8 @@ describe('authoring round-trip: init → install → lock → build → verify �
     expect(existsSync(join(cwd, SKILLS_DIR, 'alpha'))).toBe(true)
     expect(existsSync(join(cwd, SKILLS_DIR, 'beta-repo'))).toBe(true)
     // Named member forwards --skill; both spawns are the pinned invocation.
-    expect(fake.calls[0]).toEqual(['npx', '-y', 'skills@1.5', 'add', 'hcjmartin/alpha-repo', '--skill', 'alpha', '--yes'])
-    expect(fake.calls[1]).toEqual(['npx', '-y', 'skills@1.5', 'add', 'hcjmartin/beta-repo', '--yes'])
+    expect(fake.calls[0]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/alpha-repo', '--skill', 'alpha', '--yes'])
+    expect(fake.calls[1]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/beta-repo', '--yes'])
   })
 
   it('lock records the installed content', async () => {
@@ -216,7 +216,7 @@ describe('authoring round-trip: init → install → lock → build → verify �
     const before = parseSetLock(readFileSync(join(setDir, 'my-tools.skill-set.lock.json'), 'utf8'))
     const { code } = await cli(cwd, fake, ['update', 'my-tools'])
     expect(code).toBe(0)
-    expect(fake.calls.at(-1)).toEqual(['npx', '-y', 'skills@1.5', 'update', 'alpha', 'beta-repo', '-p', '--yes'])
+    expect(fake.calls.at(-1)).toEqual(['npx', '-y', 'skills@1.5.14', 'update', 'alpha', 'beta-repo', '-p', '--yes'])
     const after = parseSetLock(readFileSync(join(setDir, 'my-tools.skill-set.lock.json'), 'utf8'))
     expect(before.ok && after.ok && before.data.setHash !== after.data.setHash).toBe(true)
     // The re-lock accepted the updated bytes, so frozen verify is green again.
@@ -228,7 +228,7 @@ describe('authoring round-trip: init → install → lock → build → verify �
     const otherFake = fakeSkills(other)
     await cli(other, otherFake, ['init', 'p', 'hcjmartin/x-repo@x'])
     await cli(other, otherFake, ['install', 'p', '--', '--verbose'])
-    expect(otherFake.calls[0]).toEqual(['npx', '-y', 'skills@1.5', 'add', 'hcjmartin/x-repo', '--skill', 'x', '--yes', '--verbose'])
+    expect(otherFake.calls[0]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/x-repo', '--skill', 'x', '--yes', '--verbose'])
   })
 
   it('our own flags after -- forward to upstream instead of switching our modes', async () => {
@@ -242,7 +242,7 @@ describe('authoring round-trip: init → install → lock → build → verify �
     expect(out).not.toContain('Usage: skill-set')
     expect(out.trimStart().startsWith('{')).toBe(false)
     expect(otherFake.calls[0]).toEqual([
-      'npx', '-y', 'skills@1.5', 'add', 'hcjmartin/y-repo', '--skill', 'y', '--yes', '--json', '--help',
+      'npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/y-repo', '--skill', 'y', '--yes', '--json', '--help',
     ])
   })
 })
@@ -300,7 +300,7 @@ describe('remove', () => {
     expect(removed.out).toContain('kept alpha: shared with another set')
     // --yes answered the second prompt too: only the unshared skill went to the upstream remove.
     const removeCall = fake.calls.slice(spawnsBefore).find((c) => c[3] === 'remove')
-    expect(removeCall).toEqual(['npx', '-y', 'skills@1.5', 'remove', 'beta', '--yes'])
+    expect(removeCall).toEqual(['npx', '-y', 'skills@1.5.14', 'remove', 'beta', '--yes'])
     const index = JSON.parse(readFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), 'utf8')) as { sets: Record<string, unknown> }
     expect(Object.keys(index.sets)).toEqual(['two'])
   })
@@ -316,7 +316,7 @@ describe('remove', () => {
     expect(out).toContain(`Skill-set "kit" (from ${url}) was successfully removed`)
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
     const removeCall = fake.calls.slice(spawnsBefore).find((c) => c[3] === 'remove')
-    expect(removeCall).toEqual(['npx', '-y', 'skills@1.5', 'remove', 'gamma', '--yes'])
+    expect(removeCall).toEqual(['npx', '-y', 'skills@1.5.14', 'remove', 'gamma', '--yes'])
   })
 
   it('scripted yes/no removes the set but leaves its skills untouched', async () => {
@@ -1214,7 +1214,7 @@ describe('build --lock and delegated-spawn provenance', () => {
     }
     const { code, out, err } = await cli(cwd, grumpyCheck, ['verify', 'w'])
     expect(code).toBe(0)
-    expect(out).toContain('running: npx -y skills@1.5 check')
+    expect(out).toContain('running: npx -y skills@1.5.14 check')
     expect(err).toContain('upstream "skills check" exited with code 3')
   })
 })
@@ -1226,7 +1226,7 @@ describe('--dry-run', () => {
     await cli(cwd, fake, ['init', 'd', 'hcjmartin/alpha-repo@alpha'])
     const { code, out } = await cli(cwd, fake, ['install', 'd', '--dry-run'])
     expect(code).toBe(0)
-    expect(out).toContain('would run: npx -y skills@1.5 add hcjmartin/alpha-repo --skill alpha --yes')
+    expect(out).toContain('would run: npx -y skills@1.5.14 add hcjmartin/alpha-repo --skill alpha --yes')
     expect(out).toContain('dry run — no files changed, no skills installed')
     expect(fake.calls).toHaveLength(0)
     expect(existsSync(join(cwd, SKILLS_DIR, 'alpha'))).toBe(false)
@@ -1264,7 +1264,7 @@ describe('--dry-run', () => {
     const spawnsBefore = fake.calls.length
     const { code, out } = await cli(cwd, fake, ['update', 'd', '--dry-run'])
     expect(code).toBe(0)
-    expect(out).toContain('would run: npx -y skills@1.5 update alpha -p --yes')
+    expect(out).toContain('would run: npx -y skills@1.5.14 update alpha -p --yes')
     expect(fake.calls.length).toBe(spawnsBefore)
   })
 })

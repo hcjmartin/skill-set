@@ -1,0 +1,18 @@
+name: Feature request
+description: Propose a change to the CLI or the format
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: For format changes, note the spec section it touches.
+    validations:
+      required: true

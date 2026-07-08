@@ -47,7 +47,7 @@ describe('run — dispatch and meta-flags', () => {
     const { code, out } = await cli(['--version'])
     expect(code).toBe(0)
     expect(out).toContain(`skill-set/${VERSION}`)
-    expect(out).toContain('skills@1.5')
+    expect(out).toContain('skills@1.5.14')
   })
 
   it('intercepts --version after a verb before any dispatch', async () => {

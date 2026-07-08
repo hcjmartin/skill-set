@@ -44,7 +44,7 @@ export function specFolderHash(dir: string): string {
  * interoperate with skills-lock.json. Locale-sensitive by upstream design; not the spec hash.
  * Matches upstream lock entries only for disk-based installs, computed over the SOURCE folder
  * (the installer strips metadata.json from the copy). GitHub blob-path installs record a
- * server-side snapshot hash instead, which no local bytes reproduce (see CHANGELOG).
+ * server-side snapshot hash instead, which no local bytes reproduce (see test/compat.test.ts).
  */
 export function compatFolderHash(dir: string): string {
   const files = collectFiles(dir, dir)

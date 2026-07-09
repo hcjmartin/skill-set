@@ -1,6 +1,6 @@
 ---
 name: skill-sets
-description: Install, verify, and share named, versioned sets of agent skills with the skill-set CLI. Use whenever the user wants to add/install a skill set, mentions a `.skill-set.json` manifest or set name, or asks to bundle, share, version, or verify a group of skills. Not for authoring one standalone skill.
+description: Installs, shares, locks, verifies, and updates skill sets (named, versioned groups of agent skills). Use for any multi-skill, manifest (.skill-set.json), or set-lock operation. Not for authoring or installing one skill, or for npm and pip.
 license: MIT
 ---
 

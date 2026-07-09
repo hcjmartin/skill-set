@@ -1,5 +1,11 @@
 # @skill-set/cli
 
+## 0.1.1
+
+### Patch Changes
+
+- ee76da7: Verify the automated release pipeline (OIDC trusted publishing with provenance)
+
 ## 0.1.0
 
 ### Minor Changes

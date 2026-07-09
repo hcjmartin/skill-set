@@ -36,7 +36,7 @@ npx @skill-set/cli lock frontend
 npx @skill-set/cli verify frontend --frozen
 ```
 
-See `skill-set --help` for other commands (`build`, `update`, `remove`), flags `--json`/`--yes`/`--dry-run`, passthrough to the wrapped npx skills with `--`.
+See `skill-set --help` for other commands (`build`, `share`, `update`, `remove`), flags `--json`/`--yes`/`--dry-run`, passthrough to the wrapped npx skills with `--`.
 
 ## Common questions
 

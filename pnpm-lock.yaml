@@ -65,7 +65,11 @@ importers:
         specifier: ^6.3.11
         version: 6.3.11
 
-  packages/skills-sets: {}
+  packages/skills-sets:
+    dependencies:
+      '@skill-set/cli':
+        specifier: workspace:^
+        version: link:../cli
 
 packages:
 

@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-console.error(`skills-sets 0.0.1 — pre-release placeholder
+// skills-sets is a reserved-name alias for @skill-set/cli. It re-executes the canonical
+// CLI so `npx skills-sets <args>` behaves exactly like `npx @skill-set/cli <args>`.
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-The skill-set CLI — define, share, and install named, versioned sets of
-agent skills — is under active development and not yet released.
-
-Follow progress and read the spec: https://github.com/hcjmartin/skill-set
-
-This package name is reserved for the project; a functional release will
-replace this stub.`)
-process.exit(1)
+const require = createRequire(import.meta.url)
+const cliDir = dirname(require.resolve('@skill-set/cli/package.json'))
+await import(pathToFileURL(join(cliDir, 'dist', 'cli.mjs')).href)

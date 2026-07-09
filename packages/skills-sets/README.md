@@ -1,15 +1,14 @@
 # skills-sets
 
-> **Pre-release placeholder.** The `skill-set` CLI is under active development and not yet released. This 0.0.1 stub reserves the package name; running it prints a notice and exits non-zero.
+Alias for [`@skill-set/cli`](https://www.npmjs.com/package/@skill-set/cli). This package reserves the unscoped `skills-sets` name and re-executes the canonical CLI, so
 
-`skill-set` defines a small, open convention for **named, versioned sets of agent skills**:
+```sh
+npx skills-sets <command>
+```
 
-- a `<name>.skill-set.json` manifest (JSON Schema-validated) listing member skills by source locator
-- a content-hash lock for reproducible, verifiable installs (`verify --frozen` in CI)
-- a CLI that resolves and installs members via the existing [`skills`](https://www.npmjs.com/package/skills) ecosystem tooling
-- sets shareable as plain HTTPS-hosted manifests — `skill-set add <url>`
+behaves exactly like `npx @skill-set/cli <command>`. For the primary experience, install the canonical package directly.
 
-Follow progress, read the draft spec, and open issues at **https://github.com/hcjmartin/skill-set**.
+`skill-set` defines a small, open convention for **named, versioned sets of agent skills** — a `<name>.skill-set.json` manifest, a content-hash lock for reproducible, verifiable installs (`verify --frozen` in CI), and a CLI that resolves members via the existing [`skills`](https://www.npmjs.com/package/skills) ecosystem tooling. Docs and spec: **https://skill-set.md** · source: **https://github.com/hcjmartin/skill-set**.
 
 Not affiliated with the `skills`, `skillset`, `skillsets`, or `skills-set` npm packages.
 

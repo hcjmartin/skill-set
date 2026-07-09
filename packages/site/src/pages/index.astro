@@ -71,7 +71,12 @@ const manifest = `{
 
   <h2>Sharing a set</h2>
   <p>
-    A skill-set is shareable as a URL to its manifest — any HTTPS location serving the JSON file works; no registry
+    <code>share</code> exports a manifest and lock hashed from freshly fetched member content — not your local,
+    possibly-edited folders — ready to publish:
+  </p>
+  <Code code="npx @skill-set/cli share frontend" lang="shellscript" theme={theme} />
+  <p>
+    A skill-set is then shareable as a URL to its manifest — any HTTPS location serving the JSON file works; no registry
     required. <code>add</code> fetches, validates, shows the member and source summary, then installs:
   </p>
   <Code code="npx @skill-set/cli add https://example.com/frontend.skill-set.json" lang="shellscript" theme={theme} />

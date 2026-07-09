@@ -1,12 +1,10 @@
 {
   "name": "skills-sets",
-  "version": "0.0.1",
-  "private": true,
-  "description": "Define, share, and install named sets of agent skills. Pre-release placeholder for the skill-set CLI and manifest format.",
+  "version": "0.0.2",
+  "description": "Alias for @skill-set/cli — define, share, and install named, versioned sets of agent skills. Re-executes the canonical CLI.",
   "type": "module",
   "bin": {
-    "skills-sets": "bin/cli.mjs",
-    "skill-set": "bin/cli.mjs"
+    "skills-sets": "bin/cli.mjs"
   },
   "files": [
     "bin"
@@ -25,8 +23,11 @@
     "type": "git",
     "url": "git+https://github.com/hcjmartin/skill-set.git"
   },
-  "homepage": "https://github.com/hcjmartin/skill-set#readme",
+  "homepage": "https://skill-set.md",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@skill-set/cli": "workspace:^"
   }
 }

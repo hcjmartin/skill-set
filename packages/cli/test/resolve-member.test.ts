@@ -79,7 +79,7 @@ describe('resolveMember discovery', () => {
 
   it('a named locator resolves without any lock diff', async () => {
     const cwd = project({ 'find-skills': entry('vercel-labs/agent-skills') })
-    const result = await resolveMember('vercel-labs/agent-skills@find-skills', { cwd, runner: noopInstall() })
+    const result = await resolveMember('vercel-labs/skills@find-skills', { cwd, runner: noopInstall() })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.skill).toBe('find-skills')
   })

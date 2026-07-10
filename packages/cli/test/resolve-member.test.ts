@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ErrorCodes } from '../src/errors.ts'
 import { specFolderHash } from '../src/hash.ts'
-import { resolveMember, SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
+import { locateMember, resolveMember, SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
 
 // Hermetic table over resolveMember's discovery branches: the runner stands in for the
 // upstream CLI, so every lock-diff path is reachable without a network or a real spawn.
@@ -79,7 +79,7 @@ describe('resolveMember discovery', () => {
 
   it('a named locator resolves without any lock diff', async () => {
     const cwd = project({ 'find-skills': entry('vercel-labs/agent-skills') })
-    const result = await resolveMember('vercel-labs/agent-skills@find-skills', { cwd, runner: noopInstall() })
+    const result = await resolveMember('vercel-labs/skills@find-skills', { cwd, runner: noopInstall() })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.skill).toBe('find-skills')
   })
@@ -177,5 +177,67 @@ describe('resolveMember discovery', () => {
     const result = await resolveMember('  ', { cwd, runner })
     expect(result.ok).toBe(false)
     expect(spawned).toBe(false)
+  })
+})
+
+describe('locateMember (finds already-installed skills)', () => {
+  it('resolves a named locator to its installed folder and spec hash', () => {
+    const cwd = project({ 'find-skills': entry('vercel-labs/agent-skills') })
+    const result = locateMember('vercel-labs/skills@find-skills', { cwd })
+    expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
+    if (!result.ok) return
+    expect(result.data.skill).toBe('find-skills')
+    expect(result.data.computedHash).toBe(specFolderHash(join(cwd, SKILLS_DIR, 'find-skills')))
+    expect(result.data.sourceType).toBe('github')
+  })
+
+  it('resolves an unnamed locator via a unique source match', () => {
+    const cwd = project({
+      'find-skills': entry('vercel-labs/agent-skills'),
+      unrelated: entry('someone/else'),
+    })
+    const result = locateMember('vercel-labs/agent-skills', { cwd })
+    expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
+    if (result.ok) expect(result.data.skill).toBe('find-skills')
+  })
+
+  it('narrows same-source entries by pinned ref', () => {
+    const cwd = project({ stable: entry('owner/repo', 'v1'), next: entry('owner/repo', 'v2') })
+    const result = locateMember('owner/repo#v2', { cwd })
+    expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
+    if (!result.ok) return
+    expect(result.data.skill).toBe('next')
+    expect(result.data.ref).toBe('v2')
+  })
+
+  it('rejects an unnamed locator matching several skills with the candidates listed', () => {
+    const cwd = project({ alpha: entry('owner/repo'), beta: entry('owner/repo') })
+    const result = locateMember('owner/repo', { cwd })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe(ErrorCodes.RESOLVE_AMBIGUOUS)
+    expect(result.error.message).toContain('alpha, beta')
+    expect(result.error.data).toMatchObject({ candidates: ['alpha', 'beta'] })
+  })
+
+  it('fails an unnamed locator with zero source matches as MEMBER_NOT_INSTALLED', () => {
+    const cwd = project({ unrelated: entry('someone/else') })
+    const result = locateMember('owner/repo', { cwd })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe(ErrorCodes.MEMBER_NOT_INSTALLED)
+  })
+
+  it('fails when the locked skill has no folder on disk', () => {
+    const cwd = project()
+    writeLock(cwd, { ghost: entry('owner/repo') }) // lock entry, but no folder
+    const result = locateMember('owner/repo', { cwd })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe(ErrorCodes.MEMBER_NOT_INSTALLED)
+  })
+
+  it('rejects an empty locator', () => {
+    const result = locateMember('   ', { cwd: project() })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe(ErrorCodes.RESOLVE_FAILED)
   })
 })

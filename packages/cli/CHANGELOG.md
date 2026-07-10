@@ -1,5 +1,11 @@
 # @skill-set/cli
 
+## 0.1.2
+
+### Patch Changes
+
+- d9e8cf6: Correct the example locator in the `init` usage hint (vercel-labs/skills@find-skills).
+
 ## 0.1.1
 
 ### Patch Changes

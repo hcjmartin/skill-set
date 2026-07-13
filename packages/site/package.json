@@ -25,6 +25,8 @@
     "astro": "^5.18.0"
   },
   "devDependencies": {
-    "@astrojs/markdown-remark": "^6.3.11"
+    "@astrojs/markdown-remark": "^6.3.11",
+    "@fontsource-variable/instrument-sans": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8"
   }
 }

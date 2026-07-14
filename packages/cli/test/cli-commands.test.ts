@@ -443,7 +443,7 @@ describe('add — trusted-host allowlist', () => {
   const body = (name: string) =>
     `${JSON.stringify({ name, version: '1.0.0', description: 'A set.', skills: ['hcjmartin/gamma-repo@gamma'] }, null, 2)}\n`
   const allowUrl = 'https://skill-set.md/allow-set.skill-set.json'
-  const unknownUrl = 'https://untrusted.test/unknown-set.skill-set.json'
+  const unknownUrl = 'https://unknown-origin.invalid/unknown-set.skill-set.json'
 
   // Records whether the fetcher was reached, so an aborted confirmation can be shown to fetch nothing.
   function tracked(map: Record<string, string>): { fetcher: RunOverrides['fetcher']; fetched: string[] } {
@@ -476,7 +476,7 @@ describe('add — trusted-host allowlist', () => {
     // on the already-accepted host, so it needs no third answer.
     const { code } = await cli(cwd, fake, ['add', unknownUrl], { fetcher, confirmAnswers: [true, true] })
     expect(code).toBe(0)
-    expect(fetched).toEqual([unknownUrl, 'https://untrusted.test/unknown-set.skill-set.lock.json'])
+    expect(fetched).toEqual([unknownUrl, 'https://unknown-origin.invalid/unknown-set.skill-set.lock.json'])
     expect(existsSync(join(cwd, SETS_DIR, 'unknown-set'))).toBe(true)
   })
 
@@ -508,7 +508,7 @@ describe('add — trusted-host allowlist', () => {
     const { fetcher, fetched } = tracked({ [unknownUrl]: body('unknown-set') })
     const { code } = await cli(cwd, fake, ['add', unknownUrl, '--yes'], { fetcher })
     expect(code).toBe(0)
-    expect(fetched).toEqual([unknownUrl, 'https://untrusted.test/unknown-set.skill-set.lock.json'])
+    expect(fetched).toEqual([unknownUrl, 'https://unknown-origin.invalid/unknown-set.skill-set.lock.json'])
     expect(existsSync(join(cwd, SETS_DIR, 'unknown-set'))).toBe(true)
   })
 })

@@ -106,13 +106,13 @@ describe('fetchManifest', () => {
   })
 
   it('fails a redirect that crosses to an unrecognised host, naming only the host', async () => {
-    stub(() => redirect('https://evil.test/payload?MARKER-REDIRECT-INJ'))
+    stub(() => redirect('https://redirect-target.invalid/payload?QUERY-NOT-ECHOED'))
     const result = await fetchManifest('https://skill-set.md/x.skill-set.json')
     expect(result.ok).toBe(false)
     if (!result.ok) {
       // The host is named (hosts are not remote content); the attacker-controlled path/query is not.
-      expect(result.error.message).toContain('evil.test')
-      expect(result.error.message).not.toContain('MARKER-REDIRECT-INJ')
+      expect(result.error.message).toContain('redirect-target.invalid')
+      expect(result.error.message).not.toContain('QUERY-NOT-ECHOED')
       expect(result.error.message).not.toContain('payload')
     }
   })

@@ -21,7 +21,7 @@ const toc = getHeadings().filter((h) => h.depth === 2)
 
     <nav class="toc" aria-label="Table of contents">
       <h2>Contents</h2>
-      <ol>
+      <ol style="list-style-type: none;">
         {toc.map((h) => (
           <li>
             <a href={`#${h.slug}`}>{h.text}</a>

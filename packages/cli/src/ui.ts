@@ -31,6 +31,8 @@ export interface Ui {
   warn(line: string): void
   /** Terminal styling; identity when colors are off (non-TTY, --json, or injected streams). */
   style(format: Parameters<typeof styleText>[0], text: string): string
+  /** Brand accent (#ff5733), degrading with terminal color depth; identity when colors are off. */
+  accent(text: string): string
   /**
    * Asks a yes/no question. --yes answers true without asking; when no prompt is possible
    * (--json, CI, no TTY) the caller gets a CONFIRM_REQUIRED error instead of a hang —
@@ -65,6 +67,14 @@ export function createUi(opts: UiOptions): Ui {
     },
     style(format, text) {
       return colors ? styleText(format, text) : text
+    },
+    accent(text) {
+      if (!colors) return text
+      // getColorDepth honours NO_COLOR/FORCE_COLOR/TERM; 24-bit → exact, 8-bit → xterm 202.
+      const depth = process.stdout.getColorDepth?.() ?? 4
+      if (depth >= 24) return `\x1b[38;2;255;87;51m${text}\x1b[39m`
+      if (depth >= 8) return `\x1b[38;5;202m${text}\x1b[39m`
+      return styleText('redBright', text)
     },
     async confirm(question, confirmOpts) {
       if (opts.yes) return { ok: true, data: true }

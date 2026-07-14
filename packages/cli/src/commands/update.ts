@@ -1,6 +1,6 @@
 import { ErrorCodes, SkillSetError } from '../errors.ts'
 import { loadLockIfPresent, loadManifest, writeIndex, writeSetPage } from '../project.ts'
-import { buildUpdateInvocation, locateMember } from '../resolver.ts'
+import { buildUpdateInvocation, locateMember, restoreSetsDir, SETS_DIR_RESTORED_NOTICE, snapshotSetsDir } from '../resolver.ts'
 import { runCommand } from '../spawn.ts'
 import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
@@ -45,11 +45,14 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
   }
   ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
   const invocationArgs = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
+  // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.
+  const guard = snapshotSetsDir(ctx.cwd)
   const run = await (ctx.runner ?? runCommand)(invocation.command, invocationArgs, {
     cwd: ctx.cwd,
     env: invocation.env,
     capture: ctx.ui.json,
   })
+  if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
   if (!run.ok) return run
   if (run.data.exitCode !== 0) {
     return {

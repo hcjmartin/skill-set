@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { readSkillDescription } from './frontmatter.ts'
@@ -12,10 +12,13 @@ import {
 import { compareUtf8, parseStrictJson } from './json.ts'
 import { LOCK_SUFFIX, parseSetLock, type SetLock } from './lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from './manifest.ts'
-import { locateMember, SKILLS_DIR } from './resolver.ts'
+import { locateMember, RESERVED_SKILL_NAME, SKILLS_DIR } from './resolver.ts'
 
-/** Where set definitions live, relative to the project root (one folder per set). */
-export const SETS_DIR = `${SKILLS_DIR}/skill-sets`
+/**
+ * Where set definitions live, relative to the project root (one folder per set). The folder
+ * sits inside the skills dir under the reserved skill name, so no member install can claim it.
+ */
+export const SETS_DIR = `${SKILLS_DIR}/${RESERVED_SKILL_NAME}`
 
 export interface SetPaths {
   dir: string
@@ -86,7 +89,9 @@ export function loadAllManifests(cwd: string): Result<Manifest[]> {
 /** Regenerates one set's SKILL-SET.md from its manifest, installed members, and lock. */
 export function writeSetPage(cwd: string, manifest: Manifest, lock: SetLock | undefined): string {
   const page = generateSkillSetMd(manifest, { members: gatherMemberDetails(cwd, manifest), lock })
-  writeFileSync(setPaths(cwd, manifest.name).page, page)
+  const paths = setPaths(cwd, manifest.name)
+  mkdirSync(paths.dir, { recursive: true })
+  writeFileSync(paths.page, page)
   return `${SETS_DIR}/${manifest.name}/${SKILL_SET_MD_FILENAME}`
 }
 
@@ -99,6 +104,7 @@ export function writeIndex(cwd: string, newSources: Record<string, string> = {})
   const manifests = loadAllManifests(cwd)
   if (!manifests.ok) return manifests
   const sources = { ...readIndexSources(cwd), ...newSources }
+  mkdirSync(join(cwd, SETS_DIR), { recursive: true })
   writeFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), generateIndex(manifests.data, sources))
   return { ok: true, data: `${SETS_DIR}/${INDEX_FILENAME}` }
 }

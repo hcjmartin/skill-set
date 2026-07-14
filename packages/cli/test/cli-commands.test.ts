@@ -56,6 +56,8 @@ function fakeSkills(cwd: string): FakeSkills {
       const skillFlag = args.indexOf('--skill')
       const skill = skillFlag === -1 ? source.split('/').pop()! : args[skillFlag + 1]!
       const folder = join(runCwd, SKILLS_DIR, skill)
+      // Like the real upstream: the skill folder is owned wholesale and overwritten on install.
+      rmSync(folder, { recursive: true, force: true })
       mkdirSync(folder, { recursive: true })
       writeFileSync(
         join(folder, 'SKILL.md'),
@@ -1266,5 +1268,139 @@ describe('--dry-run', () => {
     expect(code).toBe(0)
     expect(out).toContain('would run: npx -y skills@1.5.14 update alpha -p --yes')
     expect(fake.calls.length).toBe(spawnsBefore)
+  })
+})
+
+describe('reserved skill name — the set-definitions directory is never a skill', () => {
+  const mapFetcher = (map: Record<string, string>): RunOverrides['fetcher'] => async (url: string) =>
+    url in map ? { ok: true as const, data: map[url]! } : { ok: false as const, error: new Error('unexpected url') as never }
+
+  it('add refuses a manifest that names the reserved skill, before installing or writing anything', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const url = 'https://skill-set.md/trap.skill-set.json'
+    const manifest = `${JSON.stringify({ name: 'trap', version: '1.0.0', skills: ['hcjmartin/evil-repo@skill-sets'] }, null, 2)}\n`
+    const { code, err } = await cli(cwd, fake, ['add', url, '--yes'], { fetcher: mapFetcher({ [url]: manifest }) })
+    expect(code).toBe(1)
+    expect(err).toContain('reserved for the set-definitions directory')
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
+  })
+
+  it('init refuses a member that names the reserved skill', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, err } = await cli(cwd, fake, ['init', 'trap', 'hcjmartin/evil-repo@skill-sets'])
+    expect(code).toBe(1)
+    expect(err).toContain('reserved for the set-definitions directory')
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR, 'trap'))).toBe(false)
+  })
+
+  it('install refuses a hand-edited manifest that names the reserved skill, before any spawn', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    mkdirSync(join(cwd, SETS_DIR, 'trap'), { recursive: true })
+    writeFileSync(
+      join(cwd, SETS_DIR, 'trap', 'trap.skill-set.json'),
+      `${JSON.stringify({ name: 'trap', version: '1.0.0', skills: ['hcjmartin/evil-repo@skill-sets'] }, null, 2)}\n`,
+    )
+    const { code, err } = await cli(cwd, fake, ['install', 'trap'])
+    expect(code).toBe(1)
+    expect(err).toContain('reserved for the set-definitions directory')
+    expect(fake.calls).toHaveLength(0)
+  })
+
+  it('a member resolving to the reserved skill is refused post-spawn and the set definitions survive', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'base', 'hcjmartin/alpha-repo@alpha', '--yes'])
+    const baseManifest = readFileSync(join(cwd, SETS_DIR, 'base', 'base.skill-set.json'), 'utf8')
+
+    // An unnamed locator whose source resolves to a skill named "skill-sets" — the upstream
+    // install lands on the sets directory itself and (fake, like real) overwrites it wholesale.
+    mkdirSync(join(cwd, SETS_DIR, 'trap'), { recursive: true })
+    writeFileSync(
+      join(cwd, SETS_DIR, 'trap', 'trap.skill-set.json'),
+      `${JSON.stringify({ name: 'trap', version: '1.0.0', skills: ['hcjmartin/skill-sets'] }, null, 2)}\n`,
+    )
+    const { code, out, err } = await cli(cwd, fake, ['install', 'trap'])
+    expect(code).toBe(1)
+    expect(err).toContain('resolved to the skill "skill-sets"')
+    expect(err).toContain('the set definitions were restored')
+    expect(out).toContain('its contents were restored')
+    // Byte-exact survival of every set file, and no stray skill content in the sets dir.
+    expect(readFileSync(join(cwd, SETS_DIR, 'base', 'base.skill-set.json'), 'utf8')).toBe(baseManifest)
+    expect(existsSync(join(cwd, SETS_DIR, 'trap', 'trap.skill-set.json'))).toBe(true)
+    expect(existsSync(join(cwd, SETS_DIR, INDEX_FILENAME))).toBe(true)
+    expect(existsSync(join(cwd, SETS_DIR, 'SKILL.md'))).toBe(false)
+    const upstream = JSON.parse(readFileSync(join(cwd, 'skills-lock.json'), 'utf8')) as { skills: Record<string, unknown> }
+    expect('skill-sets' in upstream.skills).toBe(false)
+  })
+
+  it('adding a shared set with a hostile unnamed member fails structurally — no crash, no set data lost', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const url = 'https://skill-set.md/authoring.skill-set.json'
+    const manifest = `${JSON.stringify(
+      { name: 'authoring', version: '1.0.0', skills: ['hcjmartin/gamma-repo@gamma', 'hcjmartin/skill-sets'] },
+      null,
+      2,
+    )}\n`
+    const { code, err } = await cli(cwd, fake, ['add', url, '--yes'], { fetcher: mapFetcher({ [url]: manifest }) })
+    expect(code).toBe(1)
+    // The regression: this sequence used to die in the generic wrapper with a raw ENOENT.
+    expect(err).not.toContain('Unexpected failure')
+    expect(err).not.toContain('ENOENT')
+    expect(err).toContain('resolved to the skill "skill-sets"')
+    expect(existsSync(join(cwd, SETS_DIR, 'authoring', 'authoring.skill-set.json'))).toBe(true)
+    expect(existsSync(join(cwd, SETS_DIR, 'SKILL.md'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(true)
+  })
+
+  it('set files a spawn tampers with are restored byte-exact, with a notice', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'base', 'hcjmartin/alpha-repo@alpha', '--yes'])
+    const baseManifest = readFileSync(join(cwd, SETS_DIR, 'base', 'base.skill-set.json'), 'utf8')
+
+    await cli(cwd, fake, ['init', 'more', 'hcjmartin/beta-repo'])
+    const runner: CommandRunner = async (command, args, opts) => {
+      const result = await fake.runner(command, args, opts)
+      // A hostile side effect alongside an otherwise ordinary install.
+      rmSync(join(cwd, SETS_DIR, 'base', 'base.skill-set.json'), { force: true })
+      return result
+    }
+    const { code, out } = await cli(cwd, { ...fake, runner }, ['install', 'more'])
+    expect(code).toBe(0)
+    expect(out).toContain('its contents were restored')
+    expect(readFileSync(join(cwd, SETS_DIR, 'base', 'base.skill-set.json'), 'utf8')).toBe(baseManifest)
+  })
+
+  it('update restores set files the upstream spawn modified', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'd', 'hcjmartin/alpha-repo@alpha', '--yes'])
+    await cli(cwd, fake, ['lock', 'd'])
+    const manifestPath = join(cwd, SETS_DIR, 'd', 'd.skill-set.json')
+    const manifestBytes = readFileSync(manifestPath, 'utf8')
+    const runner: CommandRunner = async (command, args, opts) => {
+      const result = await fake.runner(command, args, opts)
+      if (args[2] === 'update') rmSync(manifestPath, { force: true })
+      return result
+    }
+    const { code, out } = await cli(cwd, { ...fake, runner }, ['update', 'd'])
+    expect(code).toBe(0)
+    expect(out).toContain('its contents were restored')
+    expect(readFileSync(manifestPath, 'utf8')).toBe(manifestBytes)
+  })
+
+  it('the renamed skill-set skill installs as an ordinary member beside the sets directory', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code } = await cli(cwd, fake, ['init', 'tooling', 'hcjmartin/skill-set@skill-set', '--yes'])
+    expect(code).toBe(0)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'skill-set', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(cwd, SETS_DIR, 'tooling', 'tooling.skill-set.json'))).toBe(true)
   })
 })

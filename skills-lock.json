@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "skill-sets": {
+      "source": "hcjmartin/skill-set",
+      "sourceType": "github",
+      "skillPath": "skills/skill-sets/SKILL.md",
+      "computedHash": "60b9f831fef9aabf23508ad6e36d2ba22588683e7e32416a6e5aeaf0d9c743b5"
+    }
+  }
+}

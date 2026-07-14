@@ -9,3 +9,4 @@ packages/cli/schema/
 .claude
 # local-only operational notes, never tracked
 .docs/
+.agents

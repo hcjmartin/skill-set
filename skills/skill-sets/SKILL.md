@@ -12,7 +12,10 @@ A skill set is a named, versioned bundle of agent skills, defined by a small JSO
 
 Install a shared set from a URL, verifying it matches what the author published:
 
-    npx @skill-set/cli add https://skill-sets.md/sets/<name>/<name>.skill-set.json
+    npx @skill-set/cli add https://skill-sets.md/sets/example/example.skill-set.json
+    npx @skill-set/cli add https://skill-sets.md/sets/example/example.skill-set.json#sha256=<setHash>
+
+The first form auto-discovers and checks the author's sidecar lock; the second also pins the rollup hash obtained out-of-band. Either way, if verification fails nothing is kept and the command exits 3.
 
 Or define your own set from remote skills, then install it:
 

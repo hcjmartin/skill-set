@@ -2,6 +2,7 @@
 import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
+import sitemap from '@astrojs/sitemap'
 import { rehypeHeadingIds } from '@astrojs/markdown-remark'
 import { defineConfig } from 'astro/config'
 
@@ -86,7 +87,7 @@ function anchorHeadings() {
 
 export default defineConfig({
   site: 'https://skill-set.md',
-  integrations: [syncSpecSchemas()],
+  integrations: [syncSpecSchemas(), sitemap({ filter: (page) => !page.includes('/og/') })],
   markdown: {
     shikiConfig: { theme: 'github-dark-default' },
     // Astro injects heading ids after user plugins; run its id plugin first so

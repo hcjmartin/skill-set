@@ -22,11 +22,14 @@
     "deploy": "astro build && npx wrangler@4 deploy"
   },
   "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
     "astro": "^5.18.0"
   },
   "devDependencies": {
     "@astrojs/markdown-remark": "^6.3.11",
     "@fontsource-variable/instrument-sans": "^5.2.8",
-    "@fontsource-variable/jetbrains-mono": "^5.2.8"
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.26.0"
   }
 }

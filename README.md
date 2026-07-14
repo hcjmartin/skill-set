@@ -40,7 +40,7 @@ See `skill-set --help` for other commands (`build`, `share`, `update`, `remove`)
 
 ## Common questions
 
-**Where do skill-set's install?** 
+**Where does a skill-set install?** 
 
 Project scope only (for now) 
 Set definitions are nested under `.agents/skills/skill-sets/<set>/`, member skills installed as ordinary skills under `.agents/skills/`.

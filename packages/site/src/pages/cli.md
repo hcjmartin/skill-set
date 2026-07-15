@@ -47,6 +47,8 @@ Acquires a shared set: fetches the manifest (HTTPS only; at most 5 redirects; 1 
 
 Hosts other than recognised skill-set providers prompt for confirmation before any bytes are fetched, and redirects may not hop to a new host. An existing set with the same name is an error, never a silent overwrite.
 
+![Terminal recording: adding a shared skill-set and installing its members.](/demo-add.gif)
+
 ### install
 
 ```shellscript
@@ -93,6 +95,8 @@ Two modes:
 - **Frozen** (`--frozen`) — recomputes every member's content hash and compares it to the set-lock. All problems are reported in one pass — drifted members with expected and actual hashes, missing folders, and manifest/lock membership differences — and the command exits with code 3. Running `--frozen` without a lock is a precondition failure (exit 2) with a hint to create one.
 
 In CI, frozen is the default whenever a set-lock exists; `--no-frozen` opts out. See [verifying in CI](/faq/#how-do-i-verify-a-set-in-ci).
+
+![Terminal recording: skill-set verify --frozen catching drift against the lock.](/demo-verify-drift.gif)
 
 ### update
 

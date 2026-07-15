@@ -68,10 +68,11 @@ When both are given, the sidecar's `setHash` MUST equal the out-of-band value be
 
 ## 4. Resolution & installation
 
-Installing a set resolves each member locator to an installed skill folder (canonical location: `.agents/skills/<skill-name>/`). Members are installed as ordinary skills — the set does not wrap or relocate them. Requirements:
+Installing a set resolves each member locator to an installed skill folder (canonical location: `.agents/skills/<skill-name>/`). Members are installed as ordinary skills — the set does not wrap or relocate them. Set definitions written into a project (§3) live in the **sets directory** — canonically `.agents/skills/skill-sets/<set-name>/`, inside the skills directory itself. Requirements:
 
 - **Idempotence**: members already installed and satisfying the lock MUST be skipped.
 - **Conflict detection**: before installing anything, implementations MUST detect members shared with other sets but pinned to different refs — an unresolvable conflict that MUST be reported, never resolved silently by overwriting.
+- **Reserved skill name**: because the sets directory lives inside the skills directory, its folder name (`skill-sets` in the canonical layout) is reserved — a member skill installing under it would overwrite the set definitions. A member locator that names the reserved skill MUST be refused before resolution; a member whose resolver-determined skill name equals it MUST be refused after resolution, with the sets directory restored to its pre-resolution contents. Resolving, updating, or removing member skills MUST NOT create, modify, or delete set definitions.
 - **Removal**: removing a set removes its definition; removing member folders is operator-controlled and MUST be reference-counted across other sets.
 
 ## 5. The set-lock — `<name>.skill-set.lock.json`

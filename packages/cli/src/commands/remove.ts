@@ -4,7 +4,14 @@ import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import { parseSkillsLock } from '../lock.ts'
 import { MANIFEST_SUFFIX } from '../manifest.ts'
 import { listSetNames, loadManifest, readSetSource, SETS_DIR, setPaths, writeIndex } from '../project.ts'
-import { buildRemoveInvocation, locateMember, parseLocator } from '../resolver.ts'
+import {
+  buildRemoveInvocation,
+  locateMember,
+  parseLocator,
+  restoreSetsDir,
+  SETS_DIR_RESTORED_NOTICE,
+  snapshotSetsDir,
+} from '../resolver.ts'
 import { runCommand } from '../spawn.ts'
 import { formatInvocation, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
@@ -78,11 +85,14 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
   const invocation = buildRemoveInvocation(removable)
   ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
   const invocationArgs = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
+  // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.
+  const guard = snapshotSetsDir(ctx.cwd)
   const run = await (ctx.runner ?? runCommand)(invocation.command, invocationArgs, {
     cwd: ctx.cwd,
     env: invocation.env,
     capture: ctx.ui.json,
   })
+  if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
   if (!run.ok) return run
   if (run.data.exitCode !== 0) {
     return {

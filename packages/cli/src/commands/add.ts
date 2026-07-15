@@ -4,7 +4,7 @@ import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import { createSetLock, LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLock } from '../lock.ts'
 import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
-import { parseLocator, SKILLS_DIR } from '../resolver.ts'
+import { parseLocator, reservedMembers, reservedNameError, SKILLS_DIR } from '../resolver.ts'
 import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers } from '../staging.ts'
 import { installSet } from './install.ts'
 import { lockSet } from './lock.ts'
@@ -80,6 +80,11 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const manifest = parseManifest(text.data)
   if (!manifest.ok) return manifest
   const name = manifest.data.name
+
+  // A member naming the reserved skill is refused here, before anything is written or installed;
+  // unnamed locators resolving to it are caught (and undone) per-spawn in the resolver.
+  const reserved = reservedMembers(manifest.data.skills)
+  if (reserved.length > 0) return { ok: false, error: reservedNameError(reserved) }
 
   // The provenance summary comes before anything is written or installed (spec §3),
   // and before the already-exists refusal so the user sees what was fetched.
@@ -281,12 +286,14 @@ async function verifyReceipt(
   })
 
   const lockPath = `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}`
+  const paths = setPaths(ctx.cwd, name)
+  mkdirSync(paths.dir, { recursive: true })
   if (sidecar !== undefined) {
     // Adopt the author's lock verbatim, like the manifest: the bytes that verified are what land.
-    writeFileSync(setPaths(ctx.cwd, name).lock, sidecar.text)
+    writeFileSync(paths.lock, sidecar.text)
     ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified ${members.length}/${members.length} member skills against the author lock — adopted ${lockPath}`)
   } else {
-    writeFileSync(setPaths(ctx.cwd, name).lock, serializeSetLock(finalLock))
+    writeFileSync(paths.lock, serializeSetLock(finalLock))
     ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified: set hash matches the pinned sha256 — wrote ${lockPath}`)
   }
   return {

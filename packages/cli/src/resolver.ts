@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { buildConfig } from './config.ts'
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { specFolderHash } from './hash.ts'
@@ -12,6 +12,16 @@ export const SKILLS_PIN = '1.5.14'
 
 /** Where resolved skills land, relative to the project root (spec §4; upstream UNIVERSAL_SKILLS_DIR). */
 export const SKILLS_DIR = '.agents/skills'
+
+/**
+ * Reserved skill name (spec §4): set definitions live at `<SKILLS_DIR>/skill-sets`, inside the
+ * skills dir, so a member skill installing under that name would overwrite them. Named locators
+ * are refused before any spawn; resolver-determined names are refused after, with the directory
+ * restored from its pre-spawn snapshot.
+ */
+export const RESERVED_SKILL_NAME = 'skill-sets'
+
+const SETS_PATH = `${SKILLS_DIR}/${RESERVED_SKILL_NAME}`
 
 const SKILLS_LOCK_FILE = 'skills-lock.json'
 
@@ -91,6 +101,88 @@ function withTelemetryOptOut(args: string[]): SkillsInvocation {
   return { command: 'npx', args, env }
 }
 
+/** Members whose locator explicitly names the reserved skill; installers refuse these before any fetch or spawn. */
+export function reservedMembers(skills: readonly string[]): string[] {
+  return skills.filter((locator) => parseLocator(locator).skill === RESERVED_SKILL_NAME)
+}
+
+export function reservedNameError(locators: readonly string[], resolved = false): SkillSetError {
+  const verb = resolved ? 'resolved to' : locators.length === 1 ? 'names' : 'name'
+  const subject = locators.length === 1 ? `Member ${JSON.stringify(locators[0])}` : `${locators.length} members`
+  const list = locators.length === 1 ? '' : `:\n  - ${locators.join('\n  - ')}`
+  return new SkillSetError(
+    ErrorCodes.RESERVED_NAME,
+    `${subject} ${verb} the skill ${JSON.stringify(RESERVED_SKILL_NAME)}, which is reserved for the set-definitions directory (${SETS_PATH})${resolved ? '. The install was refused and the set definitions were restored' : ''}${list}`,
+    {
+      hint: 'That directory is CLI-managed and never an installable skill. Point the member at a skill with a different name.',
+      data: { reserved: RESERVED_SKILL_NAME, locators: [...locators] },
+    },
+  )
+}
+
+/** Byte snapshot of the set-definitions directory, keyed by relative path (transient `.staging` excluded). */
+export type SetsDirSnapshot = Map<string, Buffer>
+
+export function snapshotSetsDir(cwd: string): SetsDirSnapshot {
+  const snapshot: SetsDirSnapshot = new Map()
+  collectSetFiles(join(cwd, SETS_PATH), '', snapshot)
+  return snapshot
+}
+
+function collectSetFiles(dir: string, rel: string, out: SetsDirSnapshot): void {
+  if (!existsSync(dir)) return
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (rel === '' && entry.name === '.staging') continue
+    if (entry.isSymbolicLink()) continue
+    const relPath = rel === '' ? entry.name : `${rel}/${entry.name}`
+    if (entry.isDirectory()) collectSetFiles(join(dir, entry.name), relPath, out)
+    else if (entry.isFile()) out.set(relPath, readFileSync(join(dir, entry.name)))
+  }
+}
+
+/** The user-facing explanation printed whenever a restore fires. */
+export const SETS_DIR_RESTORED_NOTICE = `Notice: the skills CLI modified the set-definitions directory (${SETS_PATH}); its contents were restored.`
+
+/**
+ * Restores the set-definitions directory to a pre-spawn snapshot, byte-exact. Legitimate member
+ * installs never touch it, so a restore fires only when a spawn destroyed or altered set data
+ * (e.g. a skill claiming the reserved name). Returns true when anything was put back.
+ */
+export function restoreSetsDir(cwd: string, snapshot: SetsDirSnapshot): boolean {
+  const current = snapshotSetsDir(cwd)
+  if (current.size === snapshot.size && [...snapshot].every(([rel, bytes]) => current.get(rel)?.equals(bytes) === true)) {
+    return false
+  }
+  const root = join(cwd, SETS_PATH)
+  if (existsSync(root)) {
+    for (const entry of readdirSync(root)) {
+      if (entry === '.staging') continue
+      rmSync(join(root, entry), { recursive: true, force: true })
+    }
+    if (snapshot.size === 0 && readdirSync(root).length === 0) rmSync(root, { recursive: true, force: true })
+  }
+  for (const [rel, bytes] of snapshot) {
+    const path = join(root, rel)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, bytes)
+  }
+  return true
+}
+
+/** Drops the entry the upstream lock recorded for a refused reserved-name install. */
+function dropSkillsLockEntry(cwd: string, skill: string): void {
+  const path = join(cwd, SKILLS_LOCK_FILE)
+  if (!existsSync(path)) return
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as { skills?: Record<string, unknown> }
+    if (typeof raw.skills !== 'object' || raw.skills === null || !(skill in raw.skills)) return
+    delete raw.skills[skill]
+    writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`)
+  } catch {
+    // An unreadable upstream lock is left as found; the folder itself was already restored.
+  }
+}
+
 export interface ResolvedMember {
   skill: string
   /** The spec §6 content hash — what a set-lock records. */
@@ -137,6 +229,10 @@ export function locateMember(locator: string, opts: { cwd: string }): Result<Res
     skillName = candidates[0]!
   }
 
+  if (skillName === RESERVED_SKILL_NAME) {
+    return { ok: false, error: reservedNameError([locator]) }
+  }
+
   const folder = join(opts.cwd, SKILLS_DIR, skillName)
   if (!existsSync(folder)) {
     return fail(
@@ -174,14 +270,30 @@ export interface Resolver {
  */
 export async function resolveMember(
   locator: string,
-  opts: { cwd: string; runner?: CommandRunner; extraArgs?: readonly string[]; capture?: boolean },
+  opts: {
+    cwd: string
+    runner?: CommandRunner
+    extraArgs?: readonly string[]
+    capture?: boolean
+    onSetsDirRestored?: () => void
+  },
 ): Promise<Result<ResolvedMember>> {
   if (locator.trim() === '') {
     return fail(ErrorCodes.RESOLVE_FAILED, 'A member skill locator must be a non-empty string')
   }
 
+  const parsed = parseLocator(locator)
+  if (parsed.skill === RESERVED_SKILL_NAME) {
+    return { ok: false, error: reservedNameError([locator]) }
+  }
+
   const before = readLockSkills(opts.cwd)
   if (!before.ok) return before
+
+  // The upstream CLI owns `.agents/skills/<name>` folders wholesale, so a skill claiming the
+  // reserved name would overwrite the set definitions living inside the skills dir. The name is
+  // only known post-spawn for unnamed locators — snapshot around the spawn and restore any damage.
+  const guard = snapshotSetsDir(opts.cwd)
 
   const invocation = buildAddInvocation(locator)
   const args =
@@ -193,6 +305,7 @@ export async function resolveMember(
     env: invocation.env,
     capture: opts.capture,
   })
+  if (restoreSetsDir(opts.cwd, guard)) opts.onSetsDirRestored?.()
   if (!run.ok) return run
   if (run.data.exitCode !== 0) {
     return fail(
@@ -212,7 +325,6 @@ export async function resolveMember(
   const after = readLockSkills(opts.cwd)
   if (!after.ok) return after
 
-  const parsed = parseLocator(locator)
   let skillName: string
   if (parsed.skill !== undefined) {
     skillName = parsed.skill
@@ -233,6 +345,13 @@ export async function resolveMember(
       if (candidates.length !== 1) return discoveryFailure(locator, parsed.source, candidates)
       skillName = candidates[0]!
     }
+  }
+
+  // An unnamed locator can only be found out post-spawn; the set files are already restored
+  // above, so all that remains is refusing the member and dropping its upstream lock entry.
+  if (skillName === RESERVED_SKILL_NAME) {
+    dropSkillsLockEntry(opts.cwd, skillName)
+    return { ok: false, error: reservedNameError([locator], true) }
   }
 
   const entry = after.data[skillName]

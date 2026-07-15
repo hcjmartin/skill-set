@@ -3,6 +3,7 @@ import { ErrorCodes, SkillSetError } from '../errors.ts'
 import { SKILL_SET_MD_FILENAME } from '../generate.ts'
 import { DRAFT_SCHEMA_URL, MANIFEST_SUFFIX, NAME_PATTERN } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
+import { reservedMembers, reservedNameError } from '../resolver.ts'
 import { installSet } from './install.ts'
 import { plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
@@ -26,6 +27,8 @@ export async function cmdInit(args: string[], ctx: CommandContext): Promise<Comm
       `${INIT_USAGE}, e.g. skill-set init ${name} vercel-labs/skills@find-skills`,
     )
   }
+  const reserved = reservedMembers(locators)
+  if (reserved.length > 0) return { ok: false, error: reservedNameError(reserved) }
 
   const paths = setPaths(ctx.cwd, name)
   const relative = `${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`

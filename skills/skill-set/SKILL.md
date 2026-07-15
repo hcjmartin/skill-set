@@ -1,5 +1,5 @@
 ---
-name: skill-sets
+name: skill-set
 description: Installs, shares, locks, verifies, and updates skill sets (named, versioned groups of agent skills). Use for any multi-skill, manifest (.skill-set.json), or set-lock operation. Not for authoring or installing one skill, or for npm and pip.
 license: MIT
 ---
@@ -57,7 +57,7 @@ If verification fails, nothing is kept and the command exits 3 — see https://s
 
 ## Caveats
 
-- **Set definitions live inside this skill's folder.** Removing this skill with `npx skills remove skill-sets` removes it like any other skill — and takes the nested set definitions with it. To remove a single set instead, use `skill-set remove <name>`.
+- **`.agents/skills/skill-sets/` is the set-definitions directory, not a skill.** The name `skill-sets` is reserved: the CLI refuses to install any skill under it, so set definitions survive member installs. To remove a single set, use `skill-set remove <name>` — never delete inside that directory by hand.
 - **Local member locators work locally but aren't shareable.** You can `init`, `install`, and `lock` a set that references local skill paths, but `share` rejects them — a shared set must resolve from remote sources on another machine.
 
 ## Reference

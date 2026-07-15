@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import { createSetLock, serializeSetLock, type SetLock, type SetLockMember } from '../lock.ts'
 import type { Manifest } from '../manifest.ts'
@@ -60,6 +60,10 @@ export function lockSet(cwd: string, name: string, manifest: Manifest, opts?: { 
     }
   }
   const lock = createSetLock(name, manifest.version, members)
-  if (opts?.dryRun !== true) writeFileSync(setPaths(cwd, name).lock, serializeSetLock(lock))
+  if (opts?.dryRun !== true) {
+    const paths = setPaths(cwd, name)
+    mkdirSync(paths.dir, { recursive: true })
+    writeFileSync(paths.lock, serializeSetLock(lock))
+  }
   return { ok: true, data: lock }
 }

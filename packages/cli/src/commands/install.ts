@@ -4,7 +4,15 @@ import { ErrorCodes, SkillSetError } from '../errors.ts'
 import { specFolderHash } from '../hash.ts'
 import type { Manifest } from '../manifest.ts'
 import { loadAllManifests, loadLockIfPresent, loadManifest } from '../project.ts'
-import { buildAddInvocation, parseLocator, resolveMember, SKILLS_DIR } from '../resolver.ts'
+import {
+  buildAddInvocation,
+  parseLocator,
+  reservedMembers,
+  reservedNameError,
+  resolveMember,
+  SETS_DIR_RESTORED_NOTICE,
+  SKILLS_DIR,
+} from '../resolver.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const INSTALL_USAGE = 'skill-set install <set>'
@@ -21,6 +29,10 @@ export async function cmdInstall(args: string[], ctx: CommandContext): Promise<C
 export async function installSet(ctx: CommandContext, name: string): Promise<CommandResult> {
   const manifest = loadManifest(ctx.cwd, name)
   if (!manifest.ok) return manifest
+
+  // Members explicitly naming the reserved skill are refused before any spawn.
+  const reserved = reservedMembers(manifest.data.skills)
+  if (reserved.length > 0) return { ok: false, error: reservedNameError(reserved) }
 
   ctx.ui.out(`Installing local skill-set ${JSON.stringify(name)}...`)
 
@@ -91,6 +103,7 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
       runner: ctx.runner,
       extraArgs: ctx.passthrough,
       capture: ctx.ui.json,
+      onSetsDirRestored: () => ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE)),
     })
     if (resolved.ok) {
       installed.push({ locator: p.locator, skill: resolved.data.skill, computedHash: resolved.data.computedHash })

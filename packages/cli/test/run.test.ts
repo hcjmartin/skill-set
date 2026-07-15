@@ -122,3 +122,24 @@ describe('run — dispatch and meta-flags', () => {
     expect(VERSION).toBe(pkg.default.version)
   })
 })
+
+describe('run — intro line', () => {
+  it('prints the branded line on stderr, keeping stdout clean', async () => {
+    const w = writers()
+    await run(['banana'], { stdout: w.stdout, stderr: w.stderr, interactive: false, ci: false, intro: true })
+    const { out, err } = w.text()
+    expect(err).toContain(`{skill-set} v${VERSION} — define, share`)
+    expect(out).not.toContain('{skill-set}')
+  })
+
+  it('is suppressed with injected streams unless forced (pipes/CI/tests see nothing)', async () => {
+    const { err } = await cli(['banana'])
+    expect(err).not.toContain('{skill-set}')
+  })
+
+  it('--json wins even when the intro is forced on', async () => {
+    const w = writers()
+    await run(['banana', '--json'], { stdout: w.stdout, stderr: w.stderr, interactive: false, intro: true })
+    expect(w.text().err).not.toContain('{skill-set}')
+  })
+})

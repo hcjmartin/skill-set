@@ -33,7 +33,9 @@ const COMMANDS: Record<string, CommandEntry> = {
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
 }
 
-const HELP = `skill-set — define, share, and install named, versioned sets of agent skills.
+const TAGLINE = 'define, share, and install named, versioned sets of agent skills'
+
+const HELP = `skill-set — ${TAGLINE}.
 
 Usage: skill-set <command> [args] [flags] [-- <args for the skills CLI>]
 
@@ -66,6 +68,8 @@ export interface RunOverrides {
   fetcher?: (url: string) => Promise<Result<string>>
   ci?: boolean
   interactive?: boolean
+  /** Overrides the intro-line TTY/stream detection (tests). --json still wins. */
+  intro?: boolean
   confirmAnswers?: boolean[]
   promptAnswers?: string[]
   stdout?: Writer
@@ -109,9 +113,20 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
     interactive: overrides.interactive,
     confirmAnswers: overrides.confirmAnswers,
     promptAnswers: overrides.promptAnswers,
-    stdout,
-    stderr,
+    // Pass the raw overrides: createUi treats a present stdout as an injected stream and
+    // disables colors, so resolving the default here would turn colors off for real TTYs.
+    stdout: overrides.stdout,
+    stderr: overrides.stderr,
   })
+  // One branded line for humans, on stderr so stdout stays clean; pipes, CI, --json,
+  // and injected streams (tests) never see it.
+  const showIntro =
+    !json && (overrides.intro ?? (ui.interactive && overrides.stderr === undefined && process.stderr.isTTY === true))
+  if (showIntro) {
+    const wordmark = `${ui.accent('{')}${ui.style('bold', 'skill-set')}${ui.accent('}')}`
+    stderr.write(`${wordmark} ${ui.style('dim', `v${VERSION} — ${TAGLINE}`)}\n`)
+  }
+
   const ctx: CommandContext = {
     cwd: overrides.cwd ?? process.cwd(),
     ui,

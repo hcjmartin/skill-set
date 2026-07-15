@@ -30,6 +30,14 @@ const manifest = `{
     verifies the installed bytes later — locally or in CI.
   </p>
 
+  <p>
+    <strong>Using an agent?</strong> Add the
+    <a href="https://www.skills.sh/hcjmartin/skill-set/skill-set">skill-set skill</a> and ask your agent to create,
+    share, or install skill-sets:
+  </p>
+  <Code code="npx skills add hcjmartin/skill-set" lang="shellscript" theme={theme} />
+
+  <p>Or drive the CLI yourself — define a set and install its skills in one command:</p>
   <Code code="npx @skill-set/cli init my-tools vercel-labs/skills@find-skills hcjmartin/skills-repo@skill-creator" lang="shellscript" theme={theme} />
 
   <p>

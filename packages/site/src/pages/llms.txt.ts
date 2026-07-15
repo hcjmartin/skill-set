@@ -4,6 +4,10 @@ const body = `# skill-set
 
 > Named, versioned sets of agent skills, defined in a single JSON manifest. An open format and CLI for sharing, installing, and verifying skill-sets, with deterministic locks and content hashing.
 
+## Agent skill
+
+- [skill-set skill](https://www.skills.sh/hcjmartin/skill-set/skill-set): \`npx skills add hcjmartin/skill-set\` — installs the skill that teaches an agent to create, share, install, and verify skill-sets with this CLI.
+
 ## Docs
 
 - [Home](https://skill-set.md/): What a skill-set is, an example manifest, and how the CLI installs, locks, and verifies.

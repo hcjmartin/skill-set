@@ -80,11 +80,6 @@ export function buildAddInvocation(locator: string, opts?: { global?: boolean })
   return { command: 'npx', args, env }
 }
 
-/** Builds the pinned upstream check invocation: reports member staleness, changes nothing. */
-export function buildCheckInvocation(): SkillsInvocation {
-  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'check'])
-}
-
 /** Builds the pinned upstream update invocation for installed skills (project scope, prompt-suppressed). */
 export function buildUpdateInvocation(skills: readonly string[]): SkillsInvocation {
   return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'update', ...skills, '-p', '--yes'])

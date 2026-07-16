@@ -28,7 +28,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   build: { usage: 'build [<set>] [--lock]', describe: 'Regenerate SKILL-SET.md files and the skill-sets.json index', handler: cmdBuild },
   lock: { usage: 'lock <set>', describe: "Record each member's installed content in a set-lock", handler: cmdLock },
   share: { usage: 'share [<set>] [--manifest <path>] [--output <dir>]', describe: 'Export a shareable manifest and lock', handler: cmdShare },
-  verify: { usage: 'verify <set> [--frozen]', describe: 'Check installed members against the set (frozen: byte-exact)', handler: cmdVerify },
+  verify: { usage: 'verify [<set>] [--frozen]', describe: 'Verify installed content against each set lock (frozen: require the lock)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
 }

@@ -1,58 +1,103 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import ci from 'ci-info'
 import { ErrorCodes, SkillSetError } from '../errors.ts'
 import { specFolderHash } from '../hash.ts'
 import { LOCK_SUFFIX, type SetLock } from '../lock.ts'
 import type { Manifest } from '../manifest.ts'
-import { loadLockIfPresent, loadManifest } from '../project.ts'
-import { buildCheckInvocation, locateMember, SKILLS_DIR } from '../resolver.ts'
-import { runCommand } from '../spawn.ts'
-import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
+import { listSetNames, loadLockIfPresent, loadManifest } from '../project.ts'
+import { locateMember, SKILLS_DIR } from '../resolver.ts'
+import { plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
-export const VERIFY_USAGE = 'skill-set verify <set> [--frozen|--no-frozen]'
+export const VERIFY_USAGE = 'skill-set verify [<set>] [--frozen]'
 
 export async function cmdVerify(args: string[], ctx: CommandContext): Promise<CommandResult> {
-  const split = splitFlags(args, ['--frozen', '--no-frozen'], VERIFY_USAGE)
+  const split = splitFlags(args, ['--frozen'], VERIFY_USAGE)
   if (!split.ok) return split
   const { flags, positionals } = split.data
-  const [name, ...extra] = positionals
-  if (name === undefined || extra.length > 0) return usageError('verify takes exactly one set name', VERIFY_USAGE)
+  if (positionals.length > 1) return usageError('verify takes at most one set name', VERIFY_USAGE)
+  const frozen = flags.has('--frozen')
 
-  const manifest = loadManifest(ctx.cwd, name)
-  if (!manifest.ok) return manifest
-  const lock = loadLockIfPresent(ctx.cwd, name)
-  if (!lock.ok) return lock
-
-  // In CI, frozen is the default whenever a lock exists (explicit flags always win).
-  const inCi = ctx.ci ?? ci.isCI
-  const frozen = flags.has('--frozen') ? true : flags.has('--no-frozen') ? false : inCi && lock.data !== undefined
+  const single = positionals.length === 1
+  const names = single ? [positionals[0]!] : listSetNames(ctx.cwd)
+  if (names.length === 0) {
+    ctx.ui.out('No sets found — nothing to verify.')
+    ctx.ui.out(ctx.ui.style('dim', 'Create one with "skill-set init <name>".'))
+    return { ok: true, data: { sets: [] } }
+  }
 
   ctx.ui.out(
-    frozen
-      ? `Verifying installed skill-set ${JSON.stringify(name)} — validating contents against the lock hash...`
-      : `Verifying installed skill-set ${JSON.stringify(name)} — checking installed skills against the set...`,
+    single
+      ? `Verifying installed skill-set ${JSON.stringify(names[0])} — validating contents against the set lock...`
+      : `Verifying ${plural(names.length, 'installed skill-set')} — validating contents against the set locks...`,
   )
-  return frozen ? verifyFrozen(ctx, name, manifest.data, lock.data) : verifyDefault(ctx, name, manifest.data, lock.data)
-}
 
-/** Byte-exact verification: recompute every member's content hash against the set-lock. */
-function verifyFrozen(
-  ctx: CommandContext,
-  name: string,
-  manifest: Manifest,
-  lock: SetLock | undefined,
-): CommandResult {
-  if (lock === undefined) {
-    return {
-      ok: false,
-      error: new SkillSetError(ErrorCodes.FROZEN_NO_LOCK, `Missing skill-set lock file for ${JSON.stringify(name)} — frozen verify needs ${name}${LOCK_SUFFIX}`, {
-        hint: `Create one with "skill-set lock ${name}" and commit it.`,
-        data: { name, expected: `${name}${LOCK_SUFFIX}` },
-      }),
+  const sets: unknown[] = []
+  const failures: SkillSetError[] = []
+  for (const name of names) {
+    const manifest = loadManifest(ctx.cwd, name)
+    if (!manifest.ok) return manifest
+    const lock = loadLockIfPresent(ctx.cwd, name)
+    if (!lock.ok) return lock
+    const result =
+      lock.data !== undefined
+        ? verifyAgainstLock(ctx, name, manifest.data, lock.data)
+        : frozen
+          ? missingLock(name)
+          : verifyPresence(ctx, name, manifest.data)
+    if (result.ok) {
+      sets.push(result.data)
+    } else {
+      failures.push(result.error)
+      sets.push({ ...(result.error.data as Record<string, unknown>), error: result.error.code })
+      ctx.ui.out(`${ctx.ui.style('red', '✗')} ${name}: ${failureLabel(result.error.code)}`)
     }
   }
 
+  if (failures.length === 0) return { ok: true, data: single ? sets[0] : { sets } }
+  if (single) return { ok: false, error: failures[0]! }
+
+  // Aggregate severity: any drift means the project does not match its locks (exit 3);
+  // otherwise a frozen run missing a lock is precondition-shaped (exit 2).
+  const code =
+    failures.find((f) => f.code === ErrorCodes.DRIFT)?.code ??
+    failures.find((f) => f.code === ErrorCodes.FROZEN_NO_LOCK)?.code ??
+    failures[0]!.code
+  return {
+    ok: false,
+    error: new SkillSetError(
+      code,
+      `${failures.length} of ${plural(names.length, 'set')} failed verification:\n\n${failures.map((f) => f.message).join('\n\n')}`,
+      {
+        hint: 'Reinstall from manifests ("skill-set install <set>"), or accept the current state ("skill-set lock <set>").',
+        data: { sets },
+      },
+    ),
+  }
+}
+
+function failureLabel(code: string): string {
+  if (code === ErrorCodes.DRIFT) return 'does not match its lock'
+  if (code === ErrorCodes.FROZEN_NO_LOCK) return 'no set lock (--frozen requires one)'
+  return 'skills missing'
+}
+
+function missingLock(name: string): CommandResult {
+  return {
+    ok: false,
+    error: new SkillSetError(ErrorCodes.FROZEN_NO_LOCK, `Missing skill-set lock file for ${JSON.stringify(name)} — frozen verify needs ${name}${LOCK_SUFFIX}`, {
+      hint: `Create one with "skill-set lock ${name}" and commit it.`,
+      data: { name, expected: `${name}${LOCK_SUFFIX}` },
+    }),
+  }
+}
+
+/** Byte-exact verification: recompute every member's content hash against the set-lock. */
+function verifyAgainstLock(
+  ctx: CommandContext,
+  name: string,
+  manifest: Manifest,
+  lock: SetLock,
+): CommandResult {
   const manifestMembers = new Set(manifest.skills)
   const added = manifest.skills.filter((locator) => !(locator in lock.skills))
   const removed = Object.keys(lock.skills).filter((locator) => !manifestMembers.has(locator))
@@ -77,7 +122,7 @@ function verifyFrozen(
   const problems = drifted.length + missing.length + added.length + removed.length
   if (problems === 0) {
     ctx.ui.out(`${ctx.ui.style('green', '✓')} ${name}: all set skills match the set lock (${checked}/${checked})`)
-    return { ok: true, data: { name, mode: 'frozen', checked } }
+    return { ok: true, data: { name, mode: 'lock', checked } }
   }
 
   // Every problem in one report — a partial drift list hides the real repair size.
@@ -94,59 +139,21 @@ function verifyFrozen(
       `Set ${JSON.stringify(name)} does not match its lock — ${plural(problems, 'problem')}:\n  - ${lines.join('\n  - ')}`,
       {
         hint: `Reinstall from manifest ("skill-set install ${name}"), or accept the current state ("skill-set lock ${name}").`,
-        data: { name, mode: 'frozen', checked, drifted, missing, added, removed },
+        data: { name, mode: 'lock', checked, drifted, missing, added, removed },
       },
     ),
   }
 }
 
-/** Presence verification plus the delegated upstream staleness check; no hashes recomputed. */
-async function verifyDefault(
-  ctx: CommandContext,
-  name: string,
-  manifest: Manifest,
-  lock: SetLock | undefined,
-): Promise<CommandResult> {
+/** No lock to verify against: presence check only, with an explicit content-not-verified note. */
+function verifyPresence(ctx: CommandContext, name: string, manifest: Manifest): CommandResult {
   const present: string[] = []
   const missing: Array<{ locator: string; message: string }> = []
   for (const locator of manifest.skills) {
-    const entry = lock?.skills[locator]
-    if (entry !== undefined) {
-      if (existsSync(join(ctx.cwd, SKILLS_DIR, entry.skill))) present.push(locator)
-      else missing.push({ locator, message: `skill folder missing (${SKILLS_DIR}/${entry.skill})` })
-      continue
-    }
     const located = locateMember(locator, { cwd: ctx.cwd })
     if (located.ok) present.push(locator)
     else missing.push({ locator, message: located.error.message })
   }
-
-  // Staleness is delegated to the upstream check; its findings inform, they do not fail verify.
-  const invocation = buildCheckInvocation()
-  let checkExit: number | undefined
-  if (ctx.dryRun) {
-    ctx.ui.out(ctx.ui.style('dim', `would run: ${formatInvocation(invocation, ctx.passthrough)}`))
-  } else {
-    ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
-    const args = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
-    const check = await (ctx.runner ?? runCommand)(invocation.command, args, {
-      cwd: ctx.cwd,
-      env: invocation.env,
-      capture: ctx.ui.json,
-    })
-    checkExit = check.ok ? check.data.exitCode : undefined
-    if (checkExit !== 0) {
-      ctx.ui.warn(
-        check.ok
-          ? `upstream "skills check" exited with code ${String(checkExit)} — see its output above`
-          : `upstream "skills check" could not run: ${check.ok === false ? check.error.message : ''}`,
-      )
-    }
-  }
-
-  ctx.ui.out('Checks run:')
-  ctx.ui.out(`  - skill members (${present.length}/${manifest.skills.length} found)`)
-  ctx.ui.out('  - upstream staleness check')
 
   if (missing.length > 0) {
     return {
@@ -154,11 +161,11 @@ async function verifyDefault(
       error: new SkillSetError(
         ErrorCodes.MEMBER_NOT_INSTALLED,
         `${missing.length} of ${manifest.skills.length} skills of ${JSON.stringify(name)} are not installed:\n  - ${missing.map((m) => `${m.locator}: ${m.message}`).join('\n  - ')}`,
-        { hint: `Install with "skill-set install ${name}".`, data: { name, mode: 'default', present, missing } },
+        { hint: `Install with "skill-set install ${name}".`, data: { name, mode: 'presence', present, missing } },
       ),
     }
   }
   ctx.ui.out(`${ctx.ui.style('green', '✓')} ${name}: all set skills present (${present.length}/${manifest.skills.length})`)
-  ctx.ui.out('WARNING: skill content was not checked — use --frozen to verify content matches the set lock.')
-  return { ok: true, data: { name, mode: 'default', present, missing: [], upstreamCheckExit: checkExit } }
+  ctx.ui.warn(`${JSON.stringify(name)} has no set lock — content was not verified. Create one with "skill-set lock ${name}".`)
+  return { ok: true, data: { name, mode: 'presence', present, missing: [] } }
 }

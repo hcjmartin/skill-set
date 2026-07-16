@@ -49,6 +49,9 @@ function fakeSkills(cwd: string): FakeSkills {
     const writeRunLock = (lock: unknown): void => writeFileSync(runLockPath, `${JSON.stringify(lock, null, 2)}\n`)
     const verb = args[2]
     if (verb === 'add') {
+      if (args.includes('--list')) {
+        return { ok: true, data: { exitCode: 0, stdout: '◇ Found 1 skill\n', stderr: '' } }
+      }
       const sourceArg = args[3]!
       const hashAt = sourceArg.lastIndexOf('#')
       const source = hashAt > 0 ? sourceArg.slice(0, hashAt) : sourceArg
@@ -158,7 +161,8 @@ describe('authoring round-trip: init → install → lock → build → verify �
     expect(existsSync(join(cwd, SKILLS_DIR, 'beta-repo'))).toBe(true)
     // Named member forwards --skill; both spawns are the pinned invocation.
     expect(fake.calls[0]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/alpha-repo', '--skill', 'alpha', '--yes'])
-    expect(fake.calls[1]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/beta-repo', '--yes'])
+    expect(fake.calls[1]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/beta-repo', '--list'])
+    expect(fake.calls[2]).toEqual(['npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/beta-repo', '--yes'])
   })
 
   it('lock records the installed content', async () => {
@@ -604,6 +608,59 @@ describe('add — remote content is never echoed', () => {
     expect(summary[2]).toContain('"owner/repo@skill#v1next"')
     expect(summary[2]).toContain('(source "owner/repo", pinned "v1next")')
     expect(readFileSync(join(cwd, SETS_DIR, 'contained', 'contained.skill-set.json'), 'utf8')).toBe(manifest)
+  })
+})
+
+describe('multi-skill members are rejected before install', () => {
+  function rejectsAsMulti(fake: FakeSkills, calls: string[][]): CommandRunner {
+    return async (command, args, opts) => {
+      calls.push([command, ...args])
+      if (args.includes('--list')) {
+        expect(opts?.capture).toBe(true)
+        return { ok: true, data: { exitCode: 0, stdout: '\u001b[?25h◇ Found \u001b[32m2\u001b[0m skills\n', stderr: '' } }
+      }
+      return fake.runner(command, args, opts)
+    }
+  }
+
+  it('install writes no skill folder or upstream lock entry', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'multi', 'owner/multi-repo'])
+    const calls: string[][] = []
+
+    const { code, err } = await cli(cwd, { ...fake, runner: rejectsAsMulti(fake, calls) }, ['install', 'multi'])
+
+    expect(code).toBe(1)
+    expect(err).toContain('matches 2 available skills')
+    expect(err).toContain('Nothing was installed')
+    expect(calls).toEqual([['npx', '-y', 'skills@1.5.14', 'add', 'owner/multi-repo', '--list']])
+    expect(existsSync(join(cwd, 'skills-lock.json'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'one'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'two'))).toBe(false)
+  })
+
+  it('add reaches only the no-write probe and creates no skill folder or upstream lock entry', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const calls: string[][] = []
+    const url = 'https://skill-set.md/multi.skill-set.json'
+    const manifest = `${JSON.stringify({ name: 'multi', version: '1.0.0', skills: ['owner/multi-repo'] }, null, 2)}\n`
+    const fetcher: RunOverrides['fetcher'] = async (requested) =>
+      requested === url
+        ? { ok: true as const, data: manifest }
+        : { ok: false as const, error: new Error('no sidecar') as never }
+
+    const { code, err } = await cli(cwd, { ...fake, runner: rejectsAsMulti(fake, calls) }, ['add', url, '--yes'], {
+      fetcher,
+    })
+
+    expect(code).toBe(1)
+    expect(err).toContain('matches 2 available skills')
+    expect(calls).toEqual([['npx', '-y', 'skills@1.5.14', 'add', 'owner/multi-repo', '--list']])
+    expect(existsSync(join(cwd, 'skills-lock.json'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'one'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'two'))).toBe(false)
   })
 })
 

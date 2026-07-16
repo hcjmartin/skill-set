@@ -80,6 +80,13 @@ export function buildAddInvocation(locator: string, opts?: { global?: boolean })
   return { command: 'npx', args, env }
 }
 
+/** Builds the pinned upstream no-write discovery invocation for an unnamed member. */
+export function buildListInvocation(locator: string): SkillsInvocation {
+  const { source, ref } = parseLocator(locator)
+  const sourceArg = ref === undefined ? source : `${source}#${ref}`
+  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'add', sourceArg, '--list'])
+}
+
 /** Builds the pinned upstream check invocation: reports member staleness, changes nothing. */
 export function buildCheckInvocation(): SkillsInvocation {
   return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'check'])
@@ -287,6 +294,14 @@ export async function resolveMember(
     return { ok: false, error: reservedNameError([locator]) }
   }
 
+  // An explicit @skill already narrows the upstream selection to one. For an unnamed
+  // locator, use the pinned CLI's documented --list mode before the mutating add spawn.
+  if (parsed.skill === undefined) {
+    const probe = await probeMemberCount(locator, opts)
+    if (!probe.ok) return probe
+    if (probe.data !== 1) return preInstallDiscoveryFailure(locator, parsed.source, probe.data)
+  }
+
   const before = readLockSkills(opts.cwd)
   if (!before.ok) return before
 
@@ -384,6 +399,90 @@ export async function resolveMember(
       ...(entry.ref === undefined ? {} : { ref: entry.ref }),
     },
   }
+}
+
+async function probeMemberCount(
+  locator: string,
+  opts: {
+    cwd: string
+    runner?: CommandRunner
+    extraArgs?: readonly string[]
+    onSetsDirRestored?: () => void
+  },
+): Promise<Result<number>> {
+  const invocation = buildListInvocation(locator)
+  const args =
+    opts.extraArgs === undefined || opts.extraArgs.length === 0
+      ? invocation.args
+      : [...invocation.args, ...opts.extraArgs]
+  const guard = snapshotSetsDir(opts.cwd)
+  const run = await (opts.runner ?? runCommand)(invocation.command, args, {
+    cwd: opts.cwd,
+    env: invocation.env,
+    capture: true,
+  })
+  if (restoreSetsDir(opts.cwd, guard)) opts.onSetsDirRestored?.()
+  if (!run.ok) return run
+  if (run.data.exitCode !== 0) {
+    return fail(
+      ErrorCodes.RESOLVE_FAILED,
+      `Probing ${JSON.stringify(locator)} failed: the skills CLI exited with code ${run.data.exitCode}`,
+      {
+        hint: 'The captured skills output is in data.stderr.',
+        data: { locator, exitCode: run.data.exitCode, stderr: run.data.stderr.slice(-2000) },
+      },
+    )
+  }
+
+  const plain = stripTerminalSequences(`${run.data.stdout}\n${run.data.stderr}`)
+  const count = plain.match(/\bFound ([1-9]\d*) skills?\b/)?.[1]
+  if (count === undefined) {
+    return fail(
+      ErrorCodes.RESOLVE_FAILED,
+      `Probing ${JSON.stringify(locator)} failed: the skills CLI did not report how many skills are available`,
+      {
+        hint: `This CLI expects the documented --list output from skills@${SKILLS_PIN}; check upstream compatibility.`,
+        data: { locator },
+      },
+    )
+  }
+  return { ok: true, data: Number.parseInt(count, 10) }
+}
+
+/** Removes C0/C1 controls and ANSI CSI sequences from captured upstream status output. */
+function stripTerminalSequences(value: string): string {
+  let plain = ''
+  for (let index = 0; index < value.length; index++) {
+    const codePoint = value.codePointAt(index)!
+    if (codePoint === 0x1b) {
+      if (value.codePointAt(index + 1) === 0x5b) {
+        index += 2
+        while (index < value.length) {
+          const final = value.codePointAt(index)!
+          if (final >= 0x40 && final <= 0x7e) break
+          index++
+        }
+      }
+      continue
+    }
+    if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+      if (codePoint === 0x0a) plain += '\n'
+      continue
+    }
+    plain += value[index]!
+  }
+  return plain
+}
+
+function preInstallDiscoveryFailure(locator: string, source: string, count: number): Result<never> {
+  return fail(
+    ErrorCodes.RESOLVE_AMBIGUOUS,
+    `Member ${JSON.stringify(locator)} matches ${count} available skills. A set member must resolve to exactly one skill. Nothing was installed.`,
+    {
+      hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${source}@<skill-name>`)}.`,
+      data: { locator, source, count },
+    },
+  )
 }
 
 /**

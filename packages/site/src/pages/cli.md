@@ -89,7 +89,9 @@ The manifest and lock are written to `.agents/skills/skill-sets/_share/<set>/` (
 skill-set verify [<set>] [--frozen]
 ```
 
-Recomputes every member's content hash and compares it to the set-lock — the same check everywhere, laptop or CI. All problems are reported in one pass — drifted members with expected and actual hashes, missing folders, and manifest/lock membership differences — and the command exits with code 3. Without a set name, every set in the project is verified; any drifted set fails the run. Verify never spawns the wrapped skills CLI; for per-skill staleness against upstream sources, run `npx skills check` directly.
+Recomputes every member's content hash and validates it against the set-lock (identical in CI). Reports drifted members with expected and actual hashes, missing folders, and membership differences; exits `3` on drift. Called without a `<set>`, verifies every set in the project.
+
+For per-skill staleness against upstream sources, use `npx skills check`.
 
 When a set has no lock, verify falls back to checking that every member is present, says explicitly that content was not verified, and hints to create a lock with `skill-set lock <set>`. `--frozen` turns that fallback into a failure: any targeted set without a lock is a precondition error (exit 2). See [verifying in CI](/faq/#how-do-i-verify-a-set-in-ci).
 

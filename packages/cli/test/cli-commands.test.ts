@@ -385,7 +385,7 @@ describe('add', () => {
 
     const added = await cli(cwd, fake, ['add', 'https://skill-set.md/fetched-set.skill-set.json', '--yes'], { fetcher })
     expect(added.code).toBe(0)
-    expect(added.out).toContain('Set "fetched-set" v1.0.0 — A shared set.')
+    expect(added.out).toContain('Set "fetched-set" v1.0.0 — "A shared set."')
     // Written verbatim: the fetched bytes are exactly what lands on disk.
     expect(readFileSync(join(cwd, SETS_DIR, 'fetched-set', 'fetched-set.skill-set.json'), 'utf8')).toBe(manifestText)
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(true)
@@ -554,6 +554,56 @@ describe('add — remote content is never echoed', () => {
     const envelope = JSON.parse(out.trim()) as { ok: boolean; error: { code: string } }
     expect(envelope.ok).toBe(false)
     expect(envelope.error.code).toBe('ERR_SKILLSET_INVALID_JSON')
+  })
+
+  it('contains valid remote free text in the provenance summary without changing manifest bytes', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const description = `${'d'.repeat(120)}\n\u001b[31mINSTRUCTION${'x'.repeat(30)}`
+    const author = `${'a'.repeat(62)}\r\nAUTHOR${'y'.repeat(20)}`
+    const locator = 'owner/\u0085repo@skill#v1\u2028next'
+    const manifest = `${JSON.stringify(
+      {
+        name: 'contained',
+        version: '1.0.0',
+        description,
+        author: { name: author },
+        skills: [locator],
+      },
+      null,
+      2,
+    )}\n`
+    const url = 'https://skill-set.md/contained.skill-set.json'
+    const fetcher: RunOverrides['fetcher'] = async (requested) =>
+      requested === url
+        ? { ok: true as const, data: manifest }
+        : { ok: false as const, error: new Error('no sidecar') as never }
+
+    const { code, out } = await cli(cwd, fake, ['add', url, '--yes'], { fetcher })
+
+    expect(code).toBe(0)
+    const summary = out.split('\n').filter((line) => line.startsWith('Set ') || line.startsWith('author:') || line.startsWith('  "'))
+    expect(summary).toHaveLength(3)
+    expect(
+      summary.every((line) =>
+        [...line].every((character) => {
+          const codePoint = character.codePointAt(0)!
+          return !(
+            codePoint <= 0x1f ||
+            (codePoint >= 0x7f && codePoint <= 0x9f) ||
+            codePoint === 0x2028 ||
+            codePoint === 0x2029
+          )
+        }),
+      ),
+    ).toBe(true)
+    expect(summary[0]).toBe(`Set "contained" v1.0.0 — "${'d'.repeat(120)}[31mINS…"`)
+    expect([...(JSON.parse(summary[0]!.split(' — ')[1]!) as string)]).toHaveLength(128)
+    expect(summary[1]).toBe(`author: "${'a'.repeat(62)}A…"`)
+    expect([...(JSON.parse(summary[1]!.slice('author: '.length)) as string)]).toHaveLength(64)
+    expect(summary[2]).toContain('"owner/repo@skill#v1next"')
+    expect(summary[2]).toContain('(source "owner/repo", pinned "v1next")')
+    expect(readFileSync(join(cwd, SETS_DIR, 'contained', 'contained.skill-set.json'), 'utf8')).toBe(manifest)
   })
 })
 

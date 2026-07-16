@@ -19,6 +19,30 @@ const FETCH_TIMEOUT_MS = 30_000
 
 const HEX64 = /^[a-f0-9]{64}$/
 
+/**
+ * Renders valid-but-untrusted manifest text as terminal-safe, visibly quoted data.
+ * This is deliberately output-only: the fetched manifest remains byte-for-byte unchanged.
+ */
+function quotedRemoteText(value: string, maxLength?: number): string {
+  const singleLine = [...value]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0)!
+      return !(
+        codePoint <= 0x1f ||
+        (codePoint >= 0x7f && codePoint <= 0x9f) ||
+        codePoint === 0x2028 ||
+        codePoint === 0x2029
+      )
+    })
+    .join('')
+  const characters = [...singleLine]
+  const contained =
+    maxLength !== undefined && characters.length > maxLength
+      ? `${characters.slice(0, Math.max(0, maxLength - 1)).join('')}…`
+      : singleLine
+  return JSON.stringify(contained)
+}
+
 type VerifiedAgainst = 'sidecar' | 'hash' | 'both'
 
 interface VerificationDetail {
@@ -88,12 +112,18 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
 
   // The provenance summary comes before anything is written or installed (spec §3),
   // and before the already-exists refusal so the user sees what was fetched.
-  ctx.ui.out(`Set ${JSON.stringify(name)} v${manifest.data.version}${manifest.data.description === undefined ? '' : ` — ${manifest.data.description}`}`)
-  if (manifest.data.author !== undefined) ctx.ui.out(ctx.ui.style('dim', `author: ${manifest.data.author.name}`))
+  ctx.ui.out(
+    `Set ${JSON.stringify(name)} v${manifest.data.version}${manifest.data.description === undefined ? '' : ` — ${quotedRemoteText(manifest.data.description, 128)}`}`,
+  )
+  if (manifest.data.author !== undefined) {
+    ctx.ui.out(ctx.ui.style('dim', `author: ${quotedRemoteText(manifest.data.author.name, 64)}`))
+  }
   ctx.ui.out(`${plural(manifest.data.skills.length, 'member skill')}:`)
   for (const locator of manifest.data.skills) {
     const parsed = parseLocator(locator)
-    ctx.ui.out(`  ${locator} ${ctx.ui.style('dim', `(source ${parsed.source}${parsed.ref === undefined ? '' : `, pinned ${parsed.ref}`})`)}`)
+    ctx.ui.out(
+      `  ${quotedRemoteText(locator)} ${ctx.ui.style('dim', `(source ${quotedRemoteText(parsed.source)}${parsed.ref === undefined ? '' : `, pinned ${quotedRemoteText(parsed.ref)}`})`)}`,
+    )
   }
 
   const paths = setPaths(ctx.cwd, name)

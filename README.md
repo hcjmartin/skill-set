@@ -98,7 +98,7 @@ Args after `--` pass through verbatim, e.g. `skill-set install demo -- --agent c
 
 ## Source locators
 
-Members are listed as source-locator strings, optionally pinned with `#<tag-or-commit>`. The reference CLI delegates resolution to `npx skills`, which accepts GitHub shorthands (`owner/repo@skill-name`), git/GitLab URLs, local paths, and well-known HTTPS domains. The format itself treats locators as opaque — see [the spec](spec/draft/README.md) for the exact rules.
+Members are listed as source-locator strings, optionally pinned with `#<tag-or-branch>`. The reference CLI delegates resolution to `npx skills`, which accepts GitHub shorthands (`owner/repo@skill-name`), git/GitLab URLs, local paths, and well-known HTTPS domains. Its pinned resolver checks out refs through `git clone --branch`, so commit SHA pins are not supported. The format itself treats locators as opaque — see [the spec](spec/draft/README.md) for the exact rules.
 
 ## Where things install
 

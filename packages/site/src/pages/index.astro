@@ -13,7 +13,7 @@ const manifest = `{
   "skills": [
     "hcjmartin/skills-repo@skill-creator",
     "vercel-labs/agent-skills@web-design-guidelines#v2.1.0",
-    "https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5",
+    "https://github.com/hcjmartin/agent-skills@review-code#v1.2.0",
     "https://flocker.md/skills@research-notes"
   ]
 }`
@@ -52,7 +52,8 @@ const manifest = `{
     One file per set, <code>&lt;name&gt;.skill-set.json</code>, validated by a
     <a href="/schema/draft/skill-set.schema.json">published JSON Schema</a>. Members are the same source locators the
     <a href="https://skills.sh">skills CLI</a> accepts — GitHub shorthands, git URLs, local paths, well-known HTTPS
-    domains — optionally pinned with <code>#tag-or-commit</code>.
+    domains — optionally pinned with <code>#tag-or-branch</code>. The pinned resolver checks out refs through
+    <code>git clone --branch</code>, so commit SHA pins are not supported.
   </p>
   <Code code={manifest} lang="json" theme={theme} />
 

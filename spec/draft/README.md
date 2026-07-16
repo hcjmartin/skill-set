@@ -18,7 +18,7 @@ One file per set, named `<name>.skill-set.json`, validating against [`skill-set.
   "skills": [
     "hcjmartin/skills-repo@skill-creator",
     "vercel-labs/agent-skills@web-design-guidelines#v2.1.0",
-    "https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5",
+    "https://github.com/hcjmartin/agent-skills@review-code#v1.2.0",
     "https://flocker.md/skills@research-notes"
   ]
 }
@@ -32,9 +32,11 @@ One file per set, named `<name>.skill-set.json`, validating against [`skill-set.
 | `description` | — | What the set is for. |
 | `author` | — | `{ name, url?, organization?, uri? }` — attribution; `uri` is a stable identity URI. |
 | `homepage` | — | Docs or source page for the set. |
-| `skills[]` | ✔ | Member skills as **opaque source-locator strings**, optionally pinned with `#<tag-or-commit>`. |
+| `skills[]` | ✔ | Member skills as **opaque source-locator strings**, optionally pinned with `#<tag-or-branch>`. |
 
 Locators are opaque to this format: their grammar is owned by the resolver an implementation uses (the reference CLI delegates to `npx skills`, which accepts GitHub shorthands, git/GitLab URLs, local paths, and well-known HTTPS domains). The format only requires that a locator is a non-empty string resolving to exactly one skill.
+
+The reference resolver checks out pinned refs through `git clone --branch`, so its pins must name a tag or branch; commit SHAs are not supported.
 
 A member's **skill name** is the directory name of its installed folder — `.agents/skills/<skill-name>/` — as determined by the resolver at installation. Skill names are lowercase alphanumerics with single hyphens.
 
@@ -89,7 +91,7 @@ An optional, generated lock records exactly which bytes each member resolved to.
     "hcjmartin/skills-repo@skill-creator": {
       "skill": "skill-creator",
       "sourceType": "github",
-      "ref": "a1b2c3d",
+      "ref": "v1.2.0",
       "computedHash": "781b…"
     }
   }
@@ -111,7 +113,7 @@ Per-member entry:
 | `skill` | ✔ | The installed skill name (§1). |
 | `computedHash` | ✔ | The member content hash (§6), lowercase hex. |
 | `sourceType` | — | Resolver-reported source kind (e.g. `github`, `git`, `well-known`). The vocabulary is resolver-defined; implementations MUST NOT reject unknown values. |
-| `ref` | — | Resolver-reported resolved ref (tag or commit), when the source has one. |
+| `ref` | — | Resolver-reported resolved ref (tag or branch), when the source has one. |
 
 **`setHash`**: the SHA-256, in lowercase hex, over the concatenation — in UTF-8-byte-order of the locator — of `<locator>\n<computedHash>\n` for every member, all strings encoded as UTF-8.
 

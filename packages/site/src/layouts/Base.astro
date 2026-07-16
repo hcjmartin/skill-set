@@ -50,6 +50,7 @@ const fullTitle = title === 'skill-set' ? title : `${title} — skill-set`
         >
         <nav>
           {nav.map((item) => <a href={item.href} aria-current={path.startsWith(item.href) ? 'page' : undefined}>{item.label}</a>)}
+          <a class="ghost" href="https://www.npmjs.com/package/@skill-set/cli">npm</a>
           <a class="ghost" href="https://github.com/hcjmartin/skill-set">GitHub</a>
         </nav>
       </div>

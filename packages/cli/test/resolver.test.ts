@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildConfig } from '../src/config.ts'
-import { buildAddInvocation, parseLocator, SKILLS_PIN } from '../src/resolver.ts'
+import { buildAddInvocation, buildListInvocation, parseLocator, SKILLS_PIN } from '../src/resolver.ts'
 
 // One row per source kind the upstream resolver accepts, plus grammar edges.
 const TABLE: Array<{
@@ -94,5 +94,19 @@ describe('buildAddInvocation', () => {
   it('appends --global when requested', () => {
     const inv = buildAddInvocation('owner/repo@x', { global: true })
     expect(inv.args[inv.args.length - 1]).toBe('--global')
+  })
+})
+
+describe('buildListInvocation', () => {
+  it('uses the pinned upstream no-write list mode and preserves a ref', () => {
+    const inv = buildListInvocation('owner/repo#v1.2.0')
+    expect([inv.command, ...inv.args]).toEqual([
+      'npx',
+      '-y',
+      `skills@${SKILLS_PIN}`,
+      'add',
+      'owner/repo#v1.2.0',
+      '--list',
+    ])
   })
 })

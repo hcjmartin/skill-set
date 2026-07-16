@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -53,7 +53,13 @@ function installs(
   after: Record<string, LockEntry>,
   opts?: { skipFolders?: boolean },
 ): CommandRunner {
-  return async () => {
+  return async (_command, args) => {
+    if (args.includes('--list')) {
+      return {
+        ok: true,
+        data: { exitCode: 0, stdout: `\u001b[?25h◇ Found \u001b[32m${Object.keys(after).length}\u001b[0m skills\n`, stderr: '' },
+      }
+    }
     writeLock(cwd, after)
     if (opts?.skipFolders !== true) for (const skill of Object.keys(after)) addFolder(cwd, skill)
     return { ok: true, data: { exitCode: 0, stdout: '', stderr: '' } }
@@ -62,7 +68,10 @@ function installs(
 
 /** A runner that touches nothing — upstream's in-place update of an already-present skill. */
 function noopInstall(): CommandRunner {
-  return async () => ({ ok: true, data: { exitCode: 0, stdout: '', stderr: '' } })
+  return async (_command, args) => ({
+    ok: true,
+    data: { exitCode: 0, stdout: args.includes('--list') ? '◇ Found 1 skill\n' : '', stderr: '' },
+  })
 }
 
 describe('resolveMember discovery', () => {
@@ -128,14 +137,35 @@ describe('resolveMember discovery', () => {
     expect(result.error.hint).toContain('"owner/repo@<skill-name>"')
   })
 
-  it('a fresh install of several skills fails the one-skill rule with candidates', async () => {
+  it('a fresh install of several skills fails the one-skill rule before writing anything', async () => {
     const cwd = project()
     const runner = installs(cwd, { one: entry('owner/repo'), two: entry('owner/repo') })
     const result = await resolveMember('owner/repo', { cwd, runner })
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.error.code).toBe(ErrorCodes.RESOLVE_AMBIGUOUS)
-    expect(result.error.data).toMatchObject({ candidates: ['one', 'two'] })
+    expect(result.error.message).toContain('matches 2 available skills')
+    expect(result.error.message).toContain('Nothing was installed')
+    expect(result.error.data).toMatchObject({ count: 2 })
+    expect(existsSync(join(cwd, 'skills-lock.json'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'one'))).toBe(false)
+    expect(existsSync(join(cwd, SKILLS_DIR, 'two'))).toBe(false)
+  })
+
+  it('fails closed when successful --list output has no dependable count', async () => {
+    const cwd = project()
+    let calls = 0
+    const runner: CommandRunner = async () => {
+      calls++
+      return { ok: true, data: { exitCode: 0, stdout: 'Available Skills\n', stderr: '' } }
+    }
+    const result = await resolveMember('owner/repo', { cwd, runner })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe(ErrorCodes.RESOLVE_FAILED)
+    expect(result.error.message).toContain('did not report how many skills are available')
+    expect(calls).toBe(1)
+    expect(existsSync(join(cwd, 'skills-lock.json'))).toBe(false)
   })
 
   it('a named skill absent from the lock fails with RESOLVE_NO_LOCK_ENTRY', async () => {

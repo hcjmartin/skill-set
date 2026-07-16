@@ -58,7 +58,7 @@
             "minLength": 1
           },
           "ref": {
-            "description": "Resolver-reported resolved ref (tag or commit), when the source has one.",
+            "description": "Resolver-reported resolved ref (tag or branch), when the source has one.",
             "type": "string",
             "minLength": 1
           }

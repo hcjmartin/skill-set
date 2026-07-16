@@ -1,6 +1,6 @@
 {
   "name": "@skill-set/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Define, share, and install named, versioned sets of agent skills.",
   "type": "module",
   "bin": {

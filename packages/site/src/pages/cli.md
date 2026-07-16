@@ -103,7 +103,7 @@ When a set has no lock, verify falls back to checking that every member is prese
 skill-set update <set>
 ```
 
-Updates every member through `npx skills@1.5.14 update <skills...> -p --yes`, then re-locks the set if a lock existed and regenerates the derived files. All members must be installed before anything updates.
+Prints the update plan (each locator and its skill) and the exact upstream invocation, then asks one confirmation before mutating; `--yes` and `--json` skip the prompt, `--dry-run` shows the plan and spawns nothing. Updates run through `npx skills@1.5.14 update <skills...> -p --yes`, then the set is re-locked if a lock existed and derived files regenerate. All members must be installed before anything updates.
 
 ### remove
 
@@ -111,7 +111,7 @@ Updates every member through `npx skills@1.5.14 update <skills...> -p --yes`, th
 skill-set remove <set>
 ```
 
-Removes the set definition — manifest, lock, and generated page — after confirmation, and refreshes the index. It then offers to also remove the set's member skills, keeping any skill still referenced by another set (reference-counted, including by shared source). Skill removal is delegated to `npx skills remove` so the upstream lock stays consistent.
+Prints the full removal plan up front (set artifacts, removable and kept skills, the upstream cleanup command) and collects both confirmations before anything mutates. Skills still referenced by another set are kept (reference-counted, including by shared source). Accepted skill cleanup is delegated to `npx skills remove` and runs before the set definition is deleted, so a failed cleanup leaves the set installed for a retry. Declining cleanup removes only the set definition (manifest, lock, generated page) and refreshes the index.
 
 ## Global flags
 

@@ -1,5 +1,15 @@
 # @skill-set/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- 4a975e4: `remove` and `update` now plan before they mutate. `remove` prints the full removal plan (set artifacts, removable and kept skills, the upstream cleanup command) and collects both confirmations up front; accepted skill cleanup runs before the set definition is deleted, so a failed cleanup leaves the set installed for a retry. `update` prints the update plan and the upstream mutation boundary, and asks one confirmation before spawning; `--yes`, `--json`, and non-interactive runs are unaffected, and `--dry-run` now lists the members while spawning nothing.
+
+### Patch Changes
+
+- 8f11e5a: Harden `add` and `install` against untrusted and ambiguous inputs. Remote manifest free text in the `add` provenance summary renders as quoted, control-stripped, length-capped data (description 128 chars, author 64) — output only, fetched bytes untouched. Unnamed member locators are pre-probed with a no-write upstream `--list` before install: a source containing more than one skill fails early (`RESOLVE_AMBIGUOUS`) with nothing written to disk. Docs, schemas, and examples now correctly describe pins as `#<tag-or-branch>` — commit SHAs are not supported by the upstream resolver.
+
 ## 0.3.0
 
 ### Minor Changes

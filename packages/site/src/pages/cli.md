@@ -95,7 +95,7 @@ For per-skill staleness against upstream sources, use `npx skills check`.
 
 When a set has no lock, verify falls back to checking that every member is present, says explicitly that content was not verified, and hints to create a lock with `skill-set lock <set>`. `--frozen` turns that fallback into a failure: any targeted set without a lock is a precondition error (exit 2). See [verifying in CI](/faq/#how-do-i-verify-a-set-in-ci).
 
-![Terminal recording: skill-set verify --frozen catching drift against the lock.](/demo-verify-drift.gif)
+![Terminal recording: skill-set verify catching drift against the lock.](/demo-verify-drift.gif)
 
 ### update
 

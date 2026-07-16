@@ -216,8 +216,11 @@ describe('authoring round-trip: init → install → lock → build → verify �
 
   it('update delegates to the pinned upstream and re-locks', async () => {
     const before = parseSetLock(readFileSync(join(setDir, 'my-tools.skill-set.lock.json'), 'utf8'))
-    const { code } = await cli(cwd, fake, ['update', 'my-tools'])
+    const { code, out } = await cli(cwd, fake, ['update', 'my-tools'])
     expect(code).toBe(0)
+    expect(out).toContain('hcjmartin/alpha-repo@alpha → alpha')
+    expect(out).toContain('hcjmartin/beta-repo → beta-repo')
+    expect(out).toContain('mutation boundary: npx -y skills@1.5.14 update alpha beta-repo -p --yes')
     expect(fake.calls.at(-1)).toEqual(['npx', '-y', 'skills@1.5.14', 'update', 'alpha', 'beta-repo', '-p', '--yes'])
     const after = parseSetLock(readFileSync(join(setDir, 'my-tools.skill-set.lock.json'), 'utf8'))
     expect(before.ok && after.ok && before.data.setHash !== after.data.setHash).toBe(true)
@@ -245,6 +248,83 @@ describe('authoring round-trip: init → install → lock → build → verify �
     expect(out.trimStart().startsWith('{')).toBe(false)
     expect(otherFake.calls[0]).toEqual([
       'npx', '-y', 'skills@1.5.14', 'add', 'hcjmartin/y-repo', '--skill', 'y', '--yes', '--json', '--help',
+    ])
+  })
+})
+
+describe('update confirmation', () => {
+  async function prepare(cwd: string, fake: FakeSkills): Promise<void> {
+    await cli(cwd, fake, ['init', 'u', 'hcjmartin/alpha-repo@alpha', '--yes'])
+    await cli(cwd, fake, ['lock', 'u'])
+  }
+
+  it('interactive decline stops at the displayed mutation boundary without spawning or changing files', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await prepare(cwd, fake)
+    const skillPath = join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md')
+    const lockPath = join(cwd, SETS_DIR, 'u', 'u.skill-set.lock.json')
+    const skillBefore = readFileSync(skillPath, 'utf8')
+    const lockBefore = readFileSync(lockPath, 'utf8')
+    const spawnsBefore = fake.calls.length
+
+    const { code, out } = await cli(cwd, fake, ['update', 'u'], { interactive: true, confirmAnswers: [false] })
+
+    expect(code).toBe(0)
+    expect(out).toContain('Update plan for skill-set "u"')
+    expect(out).toContain('hcjmartin/alpha-repo@alpha → alpha')
+    expect(out).toContain('mutation boundary: npx -y skills@1.5.14 update alpha -p --yes')
+    expect(out).toContain('Aborted — no skills updated, no files changed.')
+    expect(fake.calls).toHaveLength(spawnsBefore)
+    expect(readFileSync(skillPath, 'utf8')).toBe(skillBefore)
+    expect(readFileSync(lockPath, 'utf8')).toBe(lockBefore)
+  })
+
+  it('interactive acceptance invokes the existing update flow', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await prepare(cwd, fake)
+    const spawnsBefore = fake.calls.length
+
+    const { code } = await cli(cwd, fake, ['update', 'u'], { interactive: true, confirmAnswers: [true] })
+
+    expect(code).toBe(0)
+    expect(fake.calls.slice(spawnsBefore)).toEqual([
+      ['npx', '-y', 'skills@1.5.14', 'update', 'alpha', '-p', '--yes'],
+    ])
+  })
+
+  it('--yes bypasses an interactive decline answer', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await prepare(cwd, fake)
+    const spawnsBefore = fake.calls.length
+
+    const { code } = await cli(cwd, fake, ['update', 'u', '--yes'], {
+      interactive: true,
+      confirmAnswers: [false],
+    })
+
+    expect(code).toBe(0)
+    expect(fake.calls.slice(spawnsBefore)).toEqual([
+      ['npx', '-y', 'skills@1.5.14', 'update', 'alpha', '-p', '--yes'],
+    ])
+  })
+
+  it('--json preserves non-interactive execution and returns one structured result', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await prepare(cwd, fake)
+    const spawnsBefore = fake.calls.length
+
+    // JSON remains prompt-free even when the underlying terminal is interactive.
+    const { code, out } = await cli(cwd, fake, ['update', 'u', '--json'], { interactive: true })
+
+    expect(code).toBe(0)
+    const envelope = JSON.parse(out) as { ok: boolean; command: string; data: { updated: string[] } }
+    expect(envelope).toMatchObject({ ok: true, command: 'update', data: { updated: ['alpha'] } })
+    expect(fake.calls.slice(spawnsBefore)).toEqual([
+      ['npx', '-y', 'skills@1.5.14', 'update', 'alpha', '-p', '--yes'],
     ])
   })
 })
@@ -1300,6 +1380,7 @@ describe('--dry-run', () => {
     const spawnsBefore = fake.calls.length
     const { code, out } = await cli(cwd, fake, ['update', 'd', '--dry-run'])
     expect(code).toBe(0)
+    expect(out).toContain('hcjmartin/alpha-repo@alpha → alpha')
     expect(out).toContain('would run: npx -y skills@1.5.14 update alpha -p --yes')
     expect(fake.calls.length).toBe(spawnsBefore)
   })

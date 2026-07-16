@@ -17,12 +17,15 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
   if (!manifest.ok) return manifest
 
   // Every member must be locatable before anything updates — aggregate what is not.
+  const members: Array<{ locator: string; skill: string }> = []
   const skills = new Set<string>()
   const problems: string[] = []
   for (const locator of manifest.data.skills) {
     const located = locateMember(locator, { cwd: ctx.cwd })
-    if (located.ok) skills.add(located.data.skill)
-    else problems.push(`${locator}: ${located.error.message}`)
+    if (located.ok) {
+      members.push({ locator, skill: located.data.skill })
+      skills.add(located.data.skill)
+    } else problems.push(`${locator}: ${located.error.message}`)
   }
   if (problems.length > 0) {
     return {
@@ -36,13 +39,25 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
   }
 
   const names = [...skills]
-  ctx.ui.out(`Updating skill-set ${JSON.stringify(name)} — ${plural(names.length, 'skill')} with npx skills: ${names.join(', ')}`)
   const invocation = buildUpdateInvocation(names)
+  ctx.ui.out(`Update plan for skill-set ${JSON.stringify(name)} — ${plural(names.length, 'skill')} with npx skills:`)
+  for (const member of members) ctx.ui.out(`  ${member.locator} → ${member.skill}`)
   if (ctx.dryRun) {
     ctx.ui.out(ctx.ui.style('dim', `would run: ${formatInvocation(invocation, ctx.passthrough)}`))
     ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no skills updated, no files changed`)
-    return { ok: true, data: { name, dryRun: true, wouldUpdate: names } }
+    return { ok: true, data: { name, dryRun: true, wouldUpdate: names, members } }
   }
+
+  ctx.ui.out(ctx.ui.style('yellow', `mutation boundary: ${formatInvocation(invocation, ctx.passthrough)}`))
+  if (!ctx.ui.json && ctx.ui.interactive && !ctx.ui.yes) {
+    const confirmed = await ctx.ui.confirm('Run this update command now?')
+    if (!confirmed.ok) return confirmed
+    if (!confirmed.data) {
+      ctx.ui.out('Aborted — no skills updated, no files changed.')
+      return { ok: true, data: { name, updated: false } }
+    }
+  }
+
   ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
   const invocationArgs = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
   // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.

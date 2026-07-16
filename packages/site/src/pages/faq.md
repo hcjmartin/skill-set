@@ -36,9 +36,9 @@ Commit the set-lock (create it with `skill-set lock <set>`), then run verify in 
 - run: npx @skill-set/cli verify frontend --frozen
 ```
 
-Verify recomputes every member's content hash from the bytes on disk and compares it to the lock — that is the default, identical everywhere. On mismatch it exits with code 3 and reports **all** problems in one pass — each drifted member with its expected and actual hash, missing folders, and any manifest/lock membership differences — so one run shows the full repair size.
+Verify recomputes every member's content hash from the bytes on disk and validates it against the lock (identical in CI). On mismatch it exits `3`, reporting each drifted member with its expected and actual hash, missing folders, and membership differences. Omit the set name to verify every set in the project.
 
-What `--frozen` adds is strictness about the lock itself: without it, a set that has no lock falls back to a presence check (with an explicit note that content was not verified); with it, a missing lock fails with exit 2. In a pipeline you want the flag. Omit the set name to verify every set in the project in one run.
+`--frozen` adds strictness about the lock itself: without it, a set that has no lock falls back to a presence check (with an explicit note that content was not verified); with it, a missing lock fails with exit `2`. In a pipeline you want the flag.
 
 Two related exit codes matter for pipelines: `2` means the verify could not run as asked (for example `--frozen` with no committed lock), `3` means it ran and found drift. Use `--json` for machine-readable results.
 

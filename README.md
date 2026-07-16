@@ -86,7 +86,7 @@ Args after `--` pass through verbatim, e.g. `skill-set install demo -- --agent c
 
 ## Verify in CI
 
-`verify` re-hashes every installed member against the set lock, reports drifted skill content, and exits `3` on drift — identically on a laptop and in a pipeline. Without a set name it verifies every set. `--frozen` adds strictness for CI: a set without a committed lock fails with exit `2` instead of falling back to a presence check.
+`verify` re-hashes every installed member against the set lock, reports drifted content, and exits `3` on drift (identical in CI). Without a set name it verifies every set. `--frozen` adds strictness for pipelines: a set without a committed lock fails with exit `2` instead of falling back to a presence check.
 
 ![verify --frozen catches drifted skill content](docs/demo-verify-drift.gif)
 

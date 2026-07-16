@@ -48,8 +48,8 @@ npx @skill-set/cli install frontend
 # Record exactly which bytes each member resolved to, in frontend.skill-set.lock.json
 npx @skill-set/cli lock frontend
 
-# Check the installation; --frozen recomputes every member's content hash against the lock
-npx @skill-set/cli verify frontend --frozen
+# Verify the installation — recomputes every member's content hash against the lock
+npx @skill-set/cli verify frontend
 ```
 
 Publish the manifest and lock anywhere HTTPS-reachable (`share` exports both), and anyone can `add` your set.
@@ -64,7 +64,7 @@ Publish the manifest and lock anywhere HTTPS-reachable (`share` exports both), a
 | `build [<set>] [--lock]` | Regenerate SKILL-SET.md files and the skill-sets.json index |
 | `lock <set>` | Record each member's installed content in a set-lock |
 | `share [<set>] [--manifest <path>] [--output <dir>]` | Export a shareable manifest and lock |
-| `verify <set> [--frozen]` | Check installed members against the set (frozen: byte-exact) |
+| `verify [<set>] [--frozen]` | Verify installed content against each set lock (frozen: require the lock) |
 | `update <set>` | Update members via the skills CLI, then re-lock |
 | `remove <set>` | Remove a set definition, optionally remove skills not otherwise in use |
 
@@ -86,14 +86,14 @@ Args after `--` pass through verbatim, e.g. `skill-set install demo -- --agent c
 
 ## Verify in CI
 
-`verify <set> --frozen` re-hashes every installed member against the set lock, reports drifted skill content, and exits `3` on drift. In CI, frozen is already the default whenever a lock exists.
+`verify` re-hashes every installed member against the set lock, reports drifted content, and exits `3` on drift (identical in CI). Without a set name it verifies every set. `--frozen` adds strictness for pipelines: a set without a committed lock fails with exit `2` instead of falling back to a presence check.
 
 ![verify --frozen catches drifted skill content](docs/demo-verify-drift.gif)
 
 ```yaml
 # .github/workflows/ci.yml
-- run: npx @skill-set/cli verify frontend
-  # fails the job on drift (exit 3): installed skill bytes no longer match the lock
+- run: npx @skill-set/cli verify frontend --frozen
+  # fails the job on drift (exit 3) or a missing committed lock (exit 2)
 ```
 
 ## Source locators

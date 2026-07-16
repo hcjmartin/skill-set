@@ -36,15 +36,15 @@ Commit the set-lock (create it with `skill-set lock <set>`), then run verify in 
 - run: npx @skill-set/cli verify frontend --frozen
 ```
 
-Frozen verify recomputes every member's content hash from the bytes on disk and compares it to the lock. On mismatch it exits with code 3 and reports **all** problems in one pass — each drifted member with its expected and actual hash, missing folders, and any manifest/lock membership differences — so one run shows the full repair size.
+Verify recomputes every member's content hash from the bytes on disk and validates it against the lock (identical in CI). On mismatch it exits `3`, reporting each drifted member with its expected and actual hash, missing folders, and membership differences. Omit the set name to verify every set in the project.
 
-In CI environments, frozen is already the default whenever a set-lock exists, so `npx @skill-set/cli verify frontend` behaves the same there; the explicit flag also makes the intent clear to readers. The `--frozen` flag is the strict path anywhere else too: the default (non-frozen) verify only checks presence and delegates a staleness check to `npx skills check`.
+`--frozen` adds strictness about the lock itself: without it, a set that has no lock falls back to a presence check (with an explicit note that content was not verified); with it, a missing lock fails with exit `2`. In a pipeline you want the flag.
 
 Two related exit codes matter for pipelines: `2` means the verify could not run as asked (for example `--frozen` with no committed lock), `3` means it ran and found drift. Use `--json` for machine-readable results.
 
 ## Should I commit the lock?
 
-Yes, if you want reproducibility or frozen verify — that is its purpose. The lock is deterministic (sorted keys, no timestamps; identical inputs produce identical bytes), so diffs are small and merges stay clean. Without a lock, `install` still works from the manifest alone; you just lose byte-exact verification and idempotent skips.
+Yes, if you want reproducibility or content verification — that is its purpose. The lock is deterministic (sorted keys, no timestamps; identical inputs produce identical bytes), so diffs are small and merges stay clean. Without a lock, `install` still works from the manifest alone; you just lose byte-exact verification and idempotent skips.
 
 ## What is verified, and when?
 
@@ -53,7 +53,7 @@ Trust is layered, and each layer has a defined job:
 1. **Before fetching**: `add` only reaches out to recognised skill-set hosts without asking; any other host requires an explicit confirmation first. Redirects cannot escape to unrecognised hosts.
 2. **Before anything is shown or written**: the fetched manifest must pass schema validation. Validation errors report the problem structurally and never repeat fetched content back into your terminal.
 3. **When adding a shared set (optional, recommended for third-party sets)**: if the share URL carries a hash fragment (`…skill-set.json#sha256=<hash>`) or you pass `--hash`, and/or the author published their lock beside the manifest, `add` verifies the installed content against it. If an already-installed local copy does not match, `add` re-fetches that member in a clean staging project and checks the published content without changing your installed copy. Content that does not match the provided hash or the published lock is not kept — the set files are removed and the command fails.
-4. **After that, over time**: your committed lock plus `verify --frozen` (the CI default) catches any later drift, byte-exactly, member by member.
+4. **After that, over time**: your committed lock plus `verify` catches any later drift, byte-exactly, member by member.
 
 Skill resolution itself is delegated to the pinned `skills@1.5.14` CLI with prompts suppressed — the trust decisions all happen in the layers above, not in the delegated fetch.
 

@@ -13,7 +13,7 @@ import type { Writer } from '../src/ui.ts'
 
 // End-to-end command tests over real tmp projects, hermetic via a stateful fake of the
 // pinned upstream CLI: add installs a folder + lock entry, update rewrites content,
-// remove deletes both, check exits 0. Every spawn is captured for invocation asserts.
+// remove deletes both. Every spawn is captured for invocation asserts.
 
 const dirs: string[] = []
 afterAll(() => {
@@ -83,7 +83,6 @@ function fakeSkills(cwd: string): FakeSkills {
       writeRunLock(lock)
       return ok
     }
-    if (verb === 'check') return ok
     return { ok: true, data: { exitCode: 2, stdout: '', stderr: '' } }
   }
   return { runner, calls, captureFlags }
@@ -188,30 +187,30 @@ describe('authoring round-trip: init → install → lock → build → verify �
     expect(Object.keys(index.sets)).toEqual(['my-tools'])
   })
 
-  it('verify passes in both modes while content matches the lock', async () => {
+  it('verify passes with and without --frozen while content matches the lock, spawning nothing', async () => {
+    const spawnsBefore = fake.calls.length
     expect((await cli(cwd, fake, ['verify', 'my-tools'])).code).toBe(0)
     expect((await cli(cwd, fake, ['verify', 'my-tools', '--frozen'])).code).toBe(0)
+    expect(fake.calls.length).toBe(spawnsBefore)
   })
 
-  it('frozen verify names every drifted member and exits 3', async () => {
+  it('verify names every drifted member and exits 3, by default and under --frozen', async () => {
     appendFileSync(join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md'), 'tampered\n')
-    const { code, err } = await cli(cwd, fake, ['verify', 'my-tools', '--frozen'])
+    const spawnsBefore = fake.calls.length
+    const { code, err } = await cli(cwd, fake, ['verify', 'my-tools'])
     expect(code).toBe(3)
     expect(err).toContain('hcjmartin/alpha-repo@alpha')
     expect(err).toContain('content drifted — expected')
-    // Default mode does not recompute content, so it stays green and says so.
-    const soft = await cli(cwd, fake, ['verify', 'my-tools'])
-    expect(soft.code).toBe(0)
-    expect(soft.out).toContain('Checks run:')
-    expect(soft.out).toContain('- skill members (2/2 found)')
-    expect(soft.out).toContain('all set skills present (2/2)')
-    expect(soft.out).toContain('WARNING: skill content was not checked — use --frozen')
+    expect((await cli(cwd, fake, ['verify', 'my-tools', '--frozen'])).code).toBe(3)
+    // Content verification is local hashing only — never a wrapped-CLI spawn.
+    expect(fake.calls.length).toBe(spawnsBefore)
   })
 
-  it('in CI, verify defaults to frozen when a lock exists', async () => {
-    const { code } = await cli(cwd, fake, ['verify', 'my-tools'], { ci: true })
-    expect(code).toBe(3)
-    expect((await cli(cwd, fake, ['verify', 'my-tools', '--no-frozen'], { ci: true })).code).toBe(0)
+  it('verify behaves identically in and out of CI', async () => {
+    expect((await cli(cwd, fake, ['verify', 'my-tools'], { ci: true })).code).toBe(3)
+    expect((await cli(cwd, fake, ['verify', 'my-tools'], { ci: false })).code).toBe(3)
+    // --no-frozen is gone: lock verification is the only default, so the escape hatch is meaningless.
+    expect((await cli(cwd, fake, ['verify', 'my-tools', '--no-frozen'])).code).toBe(2)
   })
 
   it('update delegates to the pinned upstream and re-locks', async () => {
@@ -1231,9 +1230,24 @@ describe('--json mode', () => {
     expect(envelope.data.installed).toHaveLength(1)
     // Every upstream spawn under --json runs captured, so child output cannot corrupt stdout.
     expect(fake.captureFlags).toEqual([true])
-    const human = await cli(cwd, fake, ['verify', 'j'])
-    expect(human.code).toBe(0)
-    expect(fake.captureFlags.at(-1)).not.toBe(true)
+  })
+
+  it('verifying all sets reports per-set results in the envelope', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'a', 'hcjmartin/alpha-repo@alpha'])
+    await cli(cwd, fake, ['init', 'b', 'hcjmartin/beta-repo@beta'])
+    await cli(cwd, fake, ['install', 'a'])
+    await cli(cwd, fake, ['install', 'b'])
+    await cli(cwd, fake, ['lock', 'a'])
+    const { code, out } = await cli(cwd, fake, ['verify', '--json'])
+    expect(code).toBe(0)
+    const envelope = JSON.parse(out) as { ok: boolean; data: { sets: Array<{ name: string; mode: string }> } }
+    expect(envelope.ok).toBe(true)
+    expect(envelope.data.sets).toEqual([
+      expect.objectContaining({ name: 'a', mode: 'lock' }),
+      expect.objectContaining({ name: 'b', mode: 'presence' }),
+    ])
   })
 
   it('maps a drift error to the envelope and exit 3', async () => {
@@ -1256,7 +1270,7 @@ describe('usage errors', () => {
   it.each([
     [['install']],
     [['lock']],
-    [['verify']],
+    [['verify', 'a', 'b']],
     [['update']],
     [['remove']],
     [['add']],
@@ -1302,7 +1316,7 @@ describe('usage errors', () => {
   })
 })
 
-describe('build --lock and delegated-spawn provenance', () => {
+describe('build --lock', () => {
   it('build --lock writes the page, the lock, and the index in one pass', async () => {
     const cwd = project()
     const fake = fakeSkills(cwd)
@@ -1315,22 +1329,67 @@ describe('build --lock and delegated-spawn provenance', () => {
     expect(existsSync(join(cwd, SETS_DIR, INDEX_FILENAME))).toBe(true)
   })
 
-  it('verify labels the delegated check and warns on its non-zero exit without failing', async () => {
+})
+
+describe('verify', () => {
+  it('without a lock falls back to a presence check and says content was not verified', async () => {
     const cwd = project()
     const fake = fakeSkills(cwd)
     await cli(cwd, fake, ['init', 'w', 'hcjmartin/alpha-repo@alpha'])
     await cli(cwd, fake, ['install', 'w'])
-    const grumpyCheck: typeof fake = {
-      ...fake,
-      runner: async (command, args, opts) =>
-        args[2] === 'check'
-          ? { ok: true, data: { exitCode: 3, stdout: '', stderr: '' } }
-          : fake.runner(command, args, opts),
-    }
-    const { code, out, err } = await cli(cwd, grumpyCheck, ['verify', 'w'])
+    const spawnsBefore = fake.calls.length
+    const { code, out, err } = await cli(cwd, fake, ['verify', 'w'])
     expect(code).toBe(0)
-    expect(out).toContain('running: npx -y skills@1.5.14 check')
-    expect(err).toContain('upstream "skills check" exited with code 3')
+    expect(out).toContain('all set skills present (1/1)')
+    expect(err).toContain('content was not verified')
+    expect(err).toContain('skill-set lock w')
+    expect(fake.calls.length).toBe(spawnsBefore)
+  })
+
+  it('with no set name verifies every set; one drifted set fails the run with exit 3', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'clean', 'hcjmartin/alpha-repo@alpha'])
+    await cli(cwd, fake, ['init', 'dirty', 'hcjmartin/beta-repo@beta'])
+    await cli(cwd, fake, ['install', 'clean'])
+    await cli(cwd, fake, ['install', 'dirty'])
+    await cli(cwd, fake, ['lock', 'clean'])
+    await cli(cwd, fake, ['lock', 'dirty'])
+    appendFileSync(join(cwd, SKILLS_DIR, 'beta', 'SKILL.md'), 'tampered\n')
+    const { code, out, err } = await cli(cwd, fake, ['verify'])
+    expect(code).toBe(3)
+    expect(out).toContain('clean: all set skills match the set lock (1/1)')
+    expect(out).toContain('dirty: does not match its lock')
+    expect(err).toContain('1 of 2 sets failed verification')
+    expect(err).toContain('content drifted — expected')
+  })
+
+  it('aggregates mixed lock/no-lock sets: lax without --frozen, exit 2 with it', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'locked', 'hcjmartin/alpha-repo@alpha'])
+    await cli(cwd, fake, ['init', 'unlocked', 'hcjmartin/beta-repo@beta'])
+    await cli(cwd, fake, ['install', 'locked'])
+    await cli(cwd, fake, ['install', 'unlocked'])
+    await cli(cwd, fake, ['lock', 'locked'])
+    const lax = await cli(cwd, fake, ['verify'])
+    expect(lax.code).toBe(0)
+    expect(lax.err).toContain('"unlocked" has no set lock')
+    const strict = await cli(cwd, fake, ['verify', '--frozen'])
+    expect(strict.code).toBe(2)
+    expect(strict.out).toContain('unlocked: no set lock (--frozen requires one)')
+    expect(strict.err).toContain('unlocked.skill-set.lock.json')
+    // Drift outranks a missing lock in the aggregate exit.
+    appendFileSync(join(cwd, SKILLS_DIR, 'alpha', 'SKILL.md'), 'tampered\n')
+    expect((await cli(cwd, fake, ['verify', '--frozen'])).code).toBe(3)
+  })
+
+  it('with no sets in the project reports nothing to verify and exits 0', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out } = await cli(cwd, fake, ['verify'])
+    expect(code).toBe(0)
+    expect(out).toContain('No sets found — nothing to verify.')
   })
 })
 

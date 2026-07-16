@@ -25,7 +25,7 @@ skill-set/<version> (wraps skills@1.5.14, pinned)
 | [`build`](#build) | `build [<set>] [--lock]` | Regenerate SKILL-SET.md files and the skill-sets.json index |
 | [`lock`](#lock) | `lock <set>` | Record each member's installed content in a set-lock |
 | [`share`](#share) | `share [<set>] [--manifest <path>] [--output <dir>]` | Export a shareable manifest and lock |
-| [`verify`](#verify) | `verify <set> [--frozen]` | Check installed members against the set (frozen: byte-exact) |
+| [`verify`](#verify) | `verify [<set>] [--frozen]` | Verify installed content against each set lock (frozen: require the lock) |
 | [`update`](#update) | `update <set>` | Update members via the skills CLI, then re-lock |
 | [`remove`](#remove) | `remove <set>` | Remove a set definition, optionally remove skills not otherwise in use |
 
@@ -86,15 +86,14 @@ The manifest and lock are written to `.agents/skills/skill-sets/_share/<set>/` (
 ### verify
 
 ```shellscript
-skill-set verify <set> [--frozen|--no-frozen]
+skill-set verify [<set>] [--frozen]
 ```
 
-Two modes:
+Recomputes every member's content hash and validates it against the set-lock (identical in CI). Reports drifted members with expected and actual hashes, missing folders, and membership differences; exits `3` on drift. Called without a `<set>`, verifies every set in the project.
 
-- **Default** — checks every member is present at its installed location and delegates a staleness check to `npx skills check` (informational; its findings do not fail the verify). Content is not compared; the command says so.
-- **Frozen** (`--frozen`) — recomputes every member's content hash and compares it to the set-lock. All problems are reported in one pass — drifted members with expected and actual hashes, missing folders, and manifest/lock membership differences — and the command exits with code 3. Running `--frozen` without a lock is a precondition failure (exit 2) with a hint to create one.
+For per-skill staleness against upstream sources, use `npx skills check`.
 
-In CI, frozen is the default whenever a set-lock exists; `--no-frozen` opts out. See [verifying in CI](/faq/#how-do-i-verify-a-set-in-ci).
+When a set has no lock, verify falls back to checking that every member is present, says explicitly that content was not verified, and hints to create a lock with `skill-set lock <set>`. `--frozen` turns that fallback into a failure: any targeted set without a lock is a precondition error (exit 2). See [verifying in CI](/faq/#how-do-i-verify-a-set-in-ci).
 
 ![Terminal recording: skill-set verify --frozen catching drift against the lock.](/demo-verify-drift.gif)
 
@@ -137,7 +136,7 @@ installs the set's skills for those agents only. See `npx skills --help` for wha
 With `--json`, every run — including crashes — emits exactly one JSON envelope on stdout:
 
 ```json
-{ "ok": true, "command": "verify", "data": { "name": "frontend", "mode": "frozen", "checked": 4 } }
+{ "ok": true, "command": "verify", "data": { "name": "frontend", "mode": "lock", "checked": 4 } }
 ```
 
 ```json
@@ -162,5 +161,5 @@ With `--json`, every run — including crashes — emits exactly one JSON envelo
 | `0` | Success |
 | `1` | Error — anything not covered below |
 | `2` | Usage — bad arguments, a prompt blocked without `--yes`, or `verify --frozen` without a set-lock |
-| `3` | Drift — frozen verify found installed content that does not match the set-lock |
+| `3` | Drift — verify found installed content that does not match the set-lock |
 | `4` | Conflict — a member source pinned to different refs across sets |

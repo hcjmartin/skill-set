@@ -307,14 +307,23 @@ describe('remove', () => {
     expect(Object.keys(index.sets)).toEqual(['two'])
   })
 
-  it('scripted yes/yes removes the set with its source, then delegates its unshared skill', async () => {
+  it('scripted yes/yes cleans up unshared skills while the confirmed set is still present, then removes it', async () => {
     const cwd = project()
     const fake = fakeSkills(cwd)
     await cli(cwd, fake, ['add', url, '--yes'], { fetcher })
+    const manifestPath = join(cwd, SETS_DIR, 'kit', 'kit.skill-set.json')
+    let setPresentDuringCleanup = false
+    const runner: CommandRunner = async (command, args, opts) => {
+      if (args[2] === 'remove') setPresentDuringCleanup = existsSync(manifestPath)
+      return fake.runner(command, args, opts)
+    }
     const spawnsBefore = fake.calls.length
-    const { code, out } = await cli(cwd, fake, ['remove', 'kit'], { confirmAnswers: [true, true] })
+    const { code, out } = await cli(cwd, { ...fake, runner }, ['remove', 'kit'], { confirmAnswers: [true, true] })
     expect(code).toBe(0)
+    expect(setPresentDuringCleanup).toBe(true)
     expect(existsSync(join(cwd, SETS_DIR, 'kit'))).toBe(false)
+    expect(out).toContain(`Removal plan for "kit" (from ${url}):`)
+    expect(out).toContain('optionally remove unshared skills: gamma')
     expect(out).toContain(`Skill-set "kit" (from ${url}) was successfully removed`)
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
     const removeCall = fake.calls.slice(spawnsBefore).find((c) => c[3] === 'remove')
@@ -332,6 +341,30 @@ describe('remove', () => {
     expect(out).toContain(`Skill-set "kit" (from ${url}) was successfully removed`)
     expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(true)
     expect(fake.calls.slice(spawnsBefore).some((c) => c[3] === 'remove')).toBe(false)
+  })
+
+  it('upstream cleanup failure preserves the set and reports that skill cleanup may be partial', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['add', url, '--yes'], { fetcher })
+    const manifestPath = join(cwd, SETS_DIR, 'kit', 'kit.skill-set.json')
+    const runner: CommandRunner = async (command, args, opts) => {
+      const result = await fake.runner(command, args, opts)
+      return args[2] === 'remove'
+        ? { ok: true, data: { exitCode: 7, stdout: '', stderr: 'cleanup failed' } }
+        : result
+    }
+
+    const { code, err } = await cli(cwd, { ...fake, runner }, ['remove', 'kit'], { confirmAnswers: [true, true] })
+    expect(code).toBe(1)
+    expect(err).toContain('remains installed')
+    expect(err).toContain('skill cleanup may have partially completed')
+    expect(existsSync(manifestPath)).toBe(true)
+    // The fake upstream did remove this folder before reporting failure, demonstrating why the
+    // error cannot promise that skills were left untouched.
+    expect(existsSync(join(cwd, SKILLS_DIR, 'gamma'))).toBe(false)
+    const index = JSON.parse(readFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), 'utf8')) as { sets: Record<string, unknown> }
+    expect(Object.keys(index.sets)).toContain('kit')
   })
 
   it('declining the first prompt leaves the set and its skills in place', async () => {
@@ -1250,9 +1283,10 @@ describe('--dry-run', () => {
 
     const dryRemove = await cli(cwd, fake, ['remove', 'd', '--dry-run'])
     expect(dryRemove.code).toBe(0)
-    // The preview mirrors the real flow: origin in the removal line, skill removal as an offer.
-    expect(dryRemove.out).toContain('would remove: set "d" (from .agents/skills/skill-sets/d/d.skill-set.json)')
-    expect(dryRemove.out).toContain('would offer to also remove its skills (alpha)')
+    // The preview reuses the complete plan shown by the real flow.
+    expect(dryRemove.out).toContain('Removal plan for "d" (from .agents/skills/skill-sets/d/d.skill-set.json)')
+    expect(dryRemove.out).toContain('remove set: definition, lock, and generated files')
+    expect(dryRemove.out).toContain('optionally remove unshared skills: alpha')
     expect(existsSync(join(cwd, SETS_DIR, 'd'))).toBe(true)
     expect(existsSync(join(cwd, SKILLS_DIR, 'alpha'))).toBe(true)
   })

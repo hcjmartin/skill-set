@@ -37,18 +37,16 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
 
   ctx.ui.out(`Removing skill-set ${JSON.stringify(name)}...`)
 
+  // Plan the whole operation before prompting or mutating. Besides making the preview truthful,
+  // this ensures a broken sibling manifest or lock cannot strand a half-removed set.
+  const counted = referenceCount(ctx, name, manifest.data.skills)
+  if (!counted.ok) return counted
+  const { removable, kept: skillsKept } = counted.data
+  printRemovalPlan(ctx, name, source, removable, skillsKept)
+
   if (ctx.dryRun) {
-    const counted = referenceCount(ctx, name, manifest.data.skills)
-    if (!counted.ok) return counted
-    const { removable, kept } = counted.data
-    ctx.ui.out(`would remove: set ${JSON.stringify(name)} (from ${source}) — definition, lock, and generated files`)
-    if (removable.length > 0) {
-      ctx.ui.out(`would offer to also remove its skills (${removable.join(', ')})`)
-      ctx.ui.out(ctx.ui.style('dim', `  would run on yes: ${formatInvocation(buildRemoveInvocation(removable), ctx.passthrough)}`))
-    }
-    for (const k of kept) ctx.ui.out(ctx.ui.style('dim', `  would keep ${k.skill ?? k.member}: ${k.reason}`))
     ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills removed`)
-    return { ok: true, data: { name, dryRun: true, wouldRemoveSkills: removable, skillsKept: kept } }
+    return { ok: true, data: { name, dryRun: true, wouldRemoveSkills: removable, skillsKept } }
   }
 
   // Prompt 1: a required gate. Declining leaves everything untouched.
@@ -59,7 +57,70 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
     return { ok: true, data: { name, removed: false } }
   }
 
-  // Act at once on the confirmed step: drop this set's own files and refresh the index.
+  // Prompt 2 is collected before either operation begins. It remains an optional convenience
+  // offer, so non-interactive callers preserve the old set-only behavior unless they pass --yes.
+  let removeSkills = false
+  if (removable.length > 0) {
+    const alsoRemove = await ctx.ui.confirm(`Also remove its skills (${removable.join(', ')})?`, { optional: true })
+    if (!alsoRemove.ok) return alsoRemove
+    removeSkills = alsoRemove.data
+  }
+
+  if (removeSkills) {
+    // Cleanup runs first so a failed or partially completed upstream removal cannot also erase the
+    // set definition needed to understand and retry the operation.
+    const invocation = buildRemoveInvocation(removable)
+    ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
+    const invocationArgs = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
+    // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.
+    const guard = snapshotSetsDir(ctx.cwd)
+    const run = await (ctx.runner ?? runCommand)(invocation.command, invocationArgs, {
+      cwd: ctx.cwd,
+      env: invocation.env,
+      capture: ctx.ui.json,
+    })
+    if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
+    if (!run.ok) {
+      return {
+        ok: false,
+        error: new SkillSetError(
+          run.error.code,
+          `Removing skills failed before the set was removed: ${run.error.message}. The set ${JSON.stringify(name)} remains installed, but skill cleanup may have partially completed.`,
+          {
+            hint: 'Inspect the installed skills, then retry removal. The set definition is still available as the source of truth.',
+            data: { name, attemptedSkills: removable, setRemoved: false, possiblePartialCleanup: true },
+            cause: run.error,
+          },
+        ),
+      }
+    }
+    if (run.data.exitCode !== 0) {
+      return {
+        ok: false,
+        error: new SkillSetError(
+          ErrorCodes.RESOLVE_FAILED,
+          `Removing skills failed: the skills CLI exited with code ${run.data.exitCode}. The set ${JSON.stringify(name)} remains installed, but skill cleanup may have partially completed.`,
+          {
+            hint: ctx.ui.json
+              ? 'Inspect data.stderr and the installed skills, then retry removal; the set definition remains available.'
+              : 'Inspect the skills output and installed skills, then retry removal; the set definition remains available.',
+            data: {
+              name,
+              attemptedSkills: removable,
+              exitCode: run.data.exitCode,
+              setRemoved: false,
+              possiblePartialCleanup: true,
+              ...(ctx.ui.json ? { stderr: run.data.stderr.slice(-2000) } : {}),
+            },
+          },
+        ),
+      }
+    }
+
+    ctx.ui.out(ctx.ui.style('dim', `  removed skills: ${removable.join(', ')}`))
+  }
+
+  // Only after all selected cleanup succeeds may the set artifacts and index be mutated.
   const paths = setPaths(ctx.cwd, name)
   rmSync(paths.manifest, { force: true })
   rmSync(paths.lock, { force: true })
@@ -69,51 +130,28 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
   if (!index.ok) return index
   ctx.ui.out(`${ctx.ui.style('green', '✓')} Skill-set ${JSON.stringify(name)} (from ${source}) was successfully removed`)
 
-  // With this set gone, count its member skills against the sets that remain.
-  const counted = referenceCount(ctx, name, manifest.data.skills)
-  if (!counted.ok) return counted
-  const { removable, kept: skillsKept } = counted.data
-  for (const kept of skillsKept) ctx.ui.out(ctx.ui.style('dim', `  kept ${kept.skill ?? kept.member}: ${kept.reason}`))
-  if (removable.length === 0) return { ok: true, data: { name, removed: true, skillsRemoved: [], skillsKept } }
+  return { ok: true, data: { name, removed: true, skillsRemoved: removeSkills ? removable : [], skillsKept } }
+}
 
-  // Prompt 2: a convenience offer, not a gate — silently declined when no prompt is possible.
-  const alsoRemove = await ctx.ui.confirm(`Also remove its skills (${removable.join(', ')})?`, { optional: true })
-  if (!alsoRemove.ok) return alsoRemove
-  if (!alsoRemove.data) return { ok: true, data: { name, removed: true, skillsRemoved: [], skillsKept } }
-
-  // Delegated to the upstream CLI so skills-lock.json stays consistent with the folders.
-  const invocation = buildRemoveInvocation(removable)
-  ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
-  const invocationArgs = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
-  // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.
-  const guard = snapshotSetsDir(ctx.cwd)
-  const run = await (ctx.runner ?? runCommand)(invocation.command, invocationArgs, {
-    cwd: ctx.cwd,
-    env: invocation.env,
-    capture: ctx.ui.json,
-  })
-  if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
-  if (!run.ok) return run
-  if (run.data.exitCode !== 0) {
-    return {
-      ok: false,
-      error: new SkillSetError(
-        ErrorCodes.RESOLVE_FAILED,
-        `Removing skills failed: the skills CLI exited with code ${run.data.exitCode}. The set ${JSON.stringify(name)} was already removed. Skill files were left in place.`,
-        {
-          hint: ctx.ui.json ? 'The captured skills output is in data.stderr.' : 'See the skills output above for the cause.',
-          data: {
-            name,
-            exitCode: run.data.exitCode,
-            ...(ctx.ui.json ? { stderr: run.data.stderr.slice(-2000) } : {}),
-          },
-        },
-      ),
-    }
+/** Prints the same complete, reference-counted plan for both real and dry-run removal. */
+function printRemovalPlan(
+  ctx: CommandContext,
+  name: string,
+  source: string,
+  removable: readonly string[],
+  kept: readonly KeptSkill[],
+): void {
+  ctx.ui.out(`Removal plan for ${JSON.stringify(name)} (from ${source}):`)
+  ctx.ui.out('  remove set: definition, lock, and generated files')
+  if (removable.length > 0) {
+    ctx.ui.out(`  optionally remove unshared skills: ${removable.join(', ')}`)
+    ctx.ui.out(
+      ctx.ui.style('dim', `    cleanup command on approval: ${formatInvocation(buildRemoveInvocation(removable), ctx.passthrough)}`),
+    )
+  } else {
+    ctx.ui.out(ctx.ui.style('dim', '  no unshared skills are eligible for removal'))
   }
-
-  ctx.ui.out(ctx.ui.style('dim', `  removed skills: ${removable.join(', ')}`))
-  return { ok: true, data: { name, removed: true, skillsRemoved: removable, skillsKept } }
+  for (const skill of kept) ctx.ui.out(ctx.ui.style('dim', `  kept ${skill.skill ?? skill.member}: ${skill.reason}`))
 }
 
 /**

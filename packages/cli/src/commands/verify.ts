@@ -62,15 +62,18 @@ export async function cmdVerify(args: string[], ctx: CommandContext): Promise<Co
     failures.find((f) => f.code === ErrorCodes.DRIFT)?.code ??
     failures.find((f) => f.code === ErrorCodes.FROZEN_NO_LOCK)?.code ??
     failures[0]!.code
+  const hint =
+    code === ErrorCodes.DRIFT
+      ? 'Reinstall from manifests ("skill-set install <set>"), or accept the current state ("skill-set lock <set>").'
+      : code === ErrorCodes.FROZEN_NO_LOCK
+        ? 'Create the missing locks with "skill-set lock <set>" and commit them.'
+        : 'Install missing members with "skill-set install <set>".'
   return {
     ok: false,
     error: new SkillSetError(
       code,
       `${failures.length} of ${plural(names.length, 'set')} failed verification:\n\n${failures.map((f) => f.message).join('\n\n')}`,
-      {
-        hint: 'Reinstall from manifests ("skill-set install <set>"), or accept the current state ("skill-set lock <set>").',
-        data: { sets },
-      },
+      { hint, data: { sets } },
     ),
   }
 }

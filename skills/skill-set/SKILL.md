@@ -1,6 +1,6 @@
 ---
 name: skill-set
-description: Installs, shares, locks, verifies, and updates skill sets (named, versioned groups of agent skills). Use for any multi-skill, manifest (.skill-set.json), or set-lock operation. Not for authoring or installing one skill, or for npm and pip.
+description: 'Installs, shares, locks, verifies, and updates skill sets (named, versioned groups of agent skills). Use for any multi-skill, manifest (.skill-set.json), or set-lock operation. Not for authoring or installing one skill, or for npm and pip.'
 license: MIT
 ---
 
@@ -10,10 +10,10 @@ A skill set is a named, versioned bundle of agent skills, defined by a small JSO
 
 ## Quick start
 
-Install a shared set from a URL, verifying it matches what the author published:
+Install a published, tag-pinned set whose four members are verified against its sidecar lock:
 
-    npx @skill-set/cli add https://skill-sets.md/sets/example/example.skill-set.json
-    npx @skill-set/cli add https://skill-sets.md/sets/example/example.skill-set.json#sha256=<setHash>
+    npx @skill-set/cli add https://skill-sets.md/sets/skill-authoring/skill-authoring.skill-set.json
+    npx @skill-set/cli add https://skill-sets.md/sets/skill-authoring/skill-authoring.skill-set.json#sha256=<setHash>
 
 The first form auto-discovers and checks the author's sidecar lock; the second also pins the rollup hash obtained out-of-band. Either way, if verification fails nothing is kept and the command exits 3.
 
@@ -31,7 +31,7 @@ Or define your own set from remote skills, then install it:
 
 ## Common tasks
 
-Every command takes a set name. Global flags: `--json` (machine output), `--yes` (CI),
+Global flags: `--json` (machine output), `--yes` (CI),
 `--dry-run` (preview, changes nothing). Full reference: https://skill-set.md/cli.
 
 - **Create a set** — `init <name> <locators...>`

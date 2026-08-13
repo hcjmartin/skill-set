@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +11,18 @@ import { resolveMember } from '../src/resolver.ts'
 // Uses a local source because byte-parity with the upstream lock is only defined for
 // disk-based installs — GitHub blob installs record a server-side snapshot hash instead.
 const RUN = process.env.RUN_COMPAT === '1'
+// Kept separate from RUN_COMPAT while SKILLS_PIN cannot check out raw commit IDs.
+// Enable this in the scheduled workflow together with the resolver bump that adds
+// end-to-end SHA support. The byte assertion also catches ref-agnostic blob caches.
+const RUN_SHA = process.env.RUN_SHA_COMPAT === '1'
+
+const PUBLIC_SHA_FIXTURE = {
+  locator:
+    'akash-joshi/agent-skills@cold-dm#02605c965898e76a96b06e2915e4bf50508d1a6d',
+  ref: '02605c965898e76a96b06e2915e4bf50508d1a6d',
+  skill: 'cold-dm',
+  skillMdSha256: '1b0f7abe047e748b89afbff2017ed28a767552a9c05f5dcecad19118c5f83b4c',
+} as const
 
 const SKILL_MD = `---
 name: probe-skill
@@ -73,4 +86,35 @@ describe.runIf(RUN)('upstream compatibility (RUN_COMPAT=1)', () => {
 
 describe.runIf(!RUN)('upstream compatibility (skipped)', () => {
   it.skip('set RUN_COMPAT=1 to run the live upstream fixture', () => {})
+})
+
+describe.runIf(RUN_SHA)('upstream commit-SHA compatibility (RUN_SHA_COMPAT=1)', () => {
+  it(
+    'resolves and installs exact bytes from an arbitrary public GitHub repository at a full SHA',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'skill-set-sha-compat-'))
+      dirs.push(root)
+
+      const cwd = join(root, 'proj')
+      mkdirSync(cwd)
+      writeFileSync(join(cwd, 'package.json'), '{ "name": "sha-compat-fixture", "private": true }\n')
+
+      const result = await resolveMember(PUBLIC_SHA_FIXTURE.locator, { cwd, capture: true })
+      expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
+      if (!result.ok) return
+
+      expect(result.data.skill).toBe(PUBLIC_SHA_FIXTURE.skill)
+      expect(result.data.ref).toBe(PUBLIC_SHA_FIXTURE.ref)
+
+      const skillMd = readFileSync(join(cwd, '.agents', 'skills', PUBLIC_SHA_FIXTURE.skill, 'SKILL.md'))
+      expect(createHash('sha256').update(skillMd).digest('hex')).toBe(
+        PUBLIC_SHA_FIXTURE.skillMdSha256,
+      )
+    },
+    300_000,
+  )
+})
+
+describe.runIf(!RUN_SHA)('upstream commit-SHA compatibility (skipped)', () => {
+  it.skip('set RUN_SHA_COMPAT=1 after the pinned resolver supports full commit SHAs', () => {})
 })

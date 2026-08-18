@@ -23,6 +23,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@skill-set/core':
+        specifier: workspace:^
+        version: link:../core
       ci-info:
         specifier: ^4.4.0
         version: 4.4.0
@@ -45,6 +48,21 @@ importers:
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@22.20.0)(esbuild@0.28.1))
+
+  packages/core:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
       tsdown:
         specifier: ^0.22.3
         version: 0.22.3(typescript@6.0.3)

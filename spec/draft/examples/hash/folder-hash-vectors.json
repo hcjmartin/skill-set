@@ -1,0 +1,63 @@
+{
+  "algorithm": "skill-set/folder-v1",
+  "description": "Golden vectors for the member content hash (spec §6). Each vector lists the files of a skill folder as (path, content) pairs; hashing them per §6 MUST produce exactly the recorded digest. Paths are given as they might be enumerated (including non-NFC forms); content is UTF-8 text (contentUtf8) or raw bytes (contentBase64), exactly one per file.",
+  "vectors": [
+    {
+      "name": "empty-folder",
+      "description": "Zero files hash to the SHA-256 of empty input (§6.5).",
+      "files": [],
+      "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "single-skill-md",
+      "description": "The common authoring case: a folder containing only SKILL.md.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "contentUtf8": "---\nname: hash-vector\ndescription: Golden vector fixture.\n---\n\n# Hash vector\n\nBody.\n"
+        }
+      ],
+      "expected": "2e7cb4e0d62309860ba0af58c176ea53c63827b371c4f61e55ffd58e89ff86d6"
+    },
+    {
+      "name": "nested-folders",
+      "description": "Multiple files including a nested path, joined with '/' on all platforms.",
+      "files": [
+        { "path": "a.txt", "contentUtf8": "alpha\n" },
+        { "path": "b.txt", "contentUtf8": "beta\n" },
+        { "path": "sub/c.txt", "contentUtf8": "gamma\n" }
+      ],
+      "expected": "838c47b6f4afe59206c87063181e49cf43f8f3a7d89f276dd208e5074bba8c22"
+    },
+    {
+      "name": "byte-order-not-locale-order",
+      "description": "UTF-8 byte order puts B.txt (0x42) before a.txt (0x61); locale-aware collation would reverse them. An implementation sorting with localeCompare or strcoll fails this vector.",
+      "files": [
+        { "path": "a.txt", "contentUtf8": "small\n" },
+        { "path": "B.txt", "contentUtf8": "big\n" }
+      ],
+      "expected": "51a197dc7e4e1b029ce47153ab466c36998f5807cc79473406c1a337ab8ee52d"
+    },
+    {
+      "name": "nfd-path-normalizes-to-nfc",
+      "description": "The path is given decomposed (e + U+0301), as APFS enumerates it; the digest is over the NFC form (U+00E9). An implementation that hashes paths without NFC normalization fails this vector.",
+      "files": [{ "path": "e\u0301.txt", "contentUtf8": "x\n" }],
+      "expected": "19b96d8c6ed9614410b688ec240fa70fbffc5b16cb540b6b003ed5bc6d40be23"
+    },
+    {
+      "name": "binary-content",
+      "description": "Content bytes go in raw — the framing NUL is a delimiter, not an escape, so embedded 0x00 and high bytes are hashed as stored.",
+      "files": [{ "path": "blob.bin", "contentBase64": "AAH/gAoA" }],
+      "expected": "b14660c775d3cd8f922fe1b011cd90df4005b74434ea76c764157788ace8eb2c"
+    },
+    {
+      "name": "utf8-byte-sort-not-utf16",
+      "description": "U+FFFD (ef bf bd) precedes U+1F600 (f0 9f 98 80) in UTF-8 bytes, but UTF-16 code-unit comparison (e.g. JavaScript's default sort) puts the surrogate pair first. An implementation sorting UTF-16 strings fails this vector.",
+      "files": [
+        { "path": "😀.txt", "contentUtf8": "g\n" },
+        { "path": "�.txt", "contentUtf8": "r\n" }
+      ],
+      "expected": "22015ef352189d0990a6a2e8231d87b1c8046949722b905aa8fee815328c80b1"
+    }
+  ]
+}

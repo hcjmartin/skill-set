@@ -1,0 +1,31 @@
+{
+  "algorithm": "skill-set/set-v1",
+  "description": "Golden vectors for the setHash rollup (spec §5). Each vector gives a member map of locator → computedHash; rolling it up per §5 MUST produce exactly the recorded digest. Locators are hashed as given — no normalization applies to them.",
+  "vectors": [
+    {
+      "name": "empty-set",
+      "description": "Zero members roll up to the SHA-256 of empty input.",
+      "members": {},
+      "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "two-members",
+      "description": "Members are concatenated in UTF-8 byte order of the locator, regardless of map insertion order.",
+      "members": {
+        "beta": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": "eec2eccf9a66a06dda6bd61db3414acca5d66d8edb0de8fe1dc63d2ff808f521"
+    },
+    {
+      "name": "unicode-and-escaped-locators",
+      "description": "Non-ASCII locators and characters JSON must escape sort by their UTF-8 bytes.",
+      "members": {
+        "a/ascii": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "z/caf\u00e9": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "m/back\\slash\"quote": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expected": "f2c42cf5d0511bea3e431dce342b29f02951384f8f777935dc4335f266875d31"
+    }
+  ]
+}

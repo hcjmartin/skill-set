@@ -1,30 +1,32 @@
 {
-  "name": "@skill-set/cli",
-  "version": "0.4.0",
-  "description": "Define, share, and install named, versioned sets of agent skills.",
+  "name": "@skill-set/core",
+  "version": "0.0.0",
+  "description": "Runtime-agnostic primitives for the skill-set format: spec hashes, algorithm identifiers, and lock types.",
   "type": "module",
-  "bin": {
-    "skill-set": "bin/cli.mjs"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
-    "bin",
-    "dist",
-    "schema"
+    "dist"
   ],
+  "sideEffects": false,
   "keywords": [
     "agent",
     "skills",
     "agent-skills",
     "skill-set",
     "ai",
-    "cli"
+    "hash"
   ],
   "author": "Harry Martin <hcjmartin@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hcjmartin/skill-set.git",
-    "directory": "packages/cli"
+    "directory": "packages/core"
   },
   "homepage": "https://skill-set.md",
   "engines": {
@@ -35,23 +37,12 @@
   },
   "scripts": {
     "build": "tsdown",
-    "prepack": "node scripts/sync-schemas.mjs",
     "dev": "tsdown --watch",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "test:coverage": "vitest run --coverage"
-  },
-  "dependencies": {
-    "@skill-set/core": "workspace:^",
-    "ci-info": "^4.4.0",
-    "tinyexec": "^1.2.4",
-    "zod": "^4.4.3"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^4.1.9",
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
     "tsdown": "^0.22.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

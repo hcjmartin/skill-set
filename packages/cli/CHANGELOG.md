@@ -1,5 +1,13 @@
 # @skill-set/cli
 
+## 0.4.1
+
+### Patch Changes
+
+- ef836b0: Hashing now delegates its canonical framing to `@skill-set/core`; the CLI keeps the filesystem adapter and a synchronous `node:crypto` digest. No behavior change — outputs are byte-identical, cross-checked in tests.
+- Updated dependencies [ef836b0]
+  - @skill-set/core@0.1.0
+
 ## 0.4.0
 
 ### Minor Changes

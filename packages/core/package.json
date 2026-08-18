@@ -1,6 +1,6 @@
 {
   "name": "@skill-set/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Runtime-agnostic primitives for the skill-set format: spec hashes, algorithm identifiers, and lock types.",
   "type": "module",
   "exports": {

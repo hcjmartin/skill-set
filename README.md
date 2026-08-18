@@ -120,6 +120,7 @@ More at [skill-set.md/faq](https://skill-set.md/faq/).
 - [skill-set.md](https://skill-set.md) — docs site: CLI reference, FAQ, and the rendered spec
 - [The format spec (draft)](spec/draft/README.md) — normative convention for the `<name>.skill-set.json` manifest: fields, validation rules, sharing semantics, the lock format, and the content-hash recipe, written so a set can be authored, resolved, and verified without this CLI
 - [JSON Schemas](spec/draft) — `skill-set.schema.json` and `skill-set.lock.schema.json`
+- [`@skill-set/core`](packages/core) — runtime-agnostic spec primitives (hashes, algorithm identifiers, lock types) for server-side and non-CLI implementations; pinned to the spec's [golden hash vectors](spec/draft/examples/hash)
 - [skill-sets.md](https://skill-sets.md) — a directory of shareable sets
 
 ## Naming

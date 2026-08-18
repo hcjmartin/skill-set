@@ -3,6 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import {
+  compatFolderHash as coreCompatFolderHash,
+  setHash as coreSetHash,
+  specFolderHash as coreSpecFolderHash,
+} from '@skill-set/core'
 import { compatFolderHash, setHash, specFolderHash } from '../src/hash.ts'
 
 // Expected digests computed independently with `printf | shasum -a 256`, not with this code.
@@ -212,5 +217,28 @@ describe('setHash', () => {
     const expected = createHash('sha256')
     for (const k of keys) expected.update(`${k}\n${members[k]}\n`, 'utf8')
     expect(setHash(members)).toBe(expected.digest('hex'))
+  })
+})
+
+describe('cross-check against @skill-set/core', () => {
+  it('agrees byte-for-byte with core across all three recipes', async () => {
+    // The CLI is core's framing plus a filesystem adapter and a sync digest — the
+    // outputs must be indistinguishable from core's async WebCrypto path.
+    const files: Record<string, string | Uint8Array> = {
+      'SKILL.md': '---\nname: probe\n---\nBody.\n',
+      'B.txt': 'big\n',
+      'a.txt': 'small\n',
+      'sub/blob.bin': Uint8Array.from([0x00, 0x01, 0xff, 0x80]),
+    }
+    const dir = tmpFolder(files)
+    const encoder = new TextEncoder()
+    const asSkillFiles = Object.entries(files).map(([path, content]) => ({
+      path,
+      bytes: typeof content === 'string' ? encoder.encode(content) : content,
+    }))
+    expect(specFolderHash(dir)).toBe(await coreSpecFolderHash(asSkillFiles))
+    expect(compatFolderHash(dir)).toBe(await coreCompatFolderHash(asSkillFiles))
+    const members = { beta: 'b'.repeat(64), alpha: 'a'.repeat(64) }
+    expect(setHash(members)).toBe(await coreSetHash(members))
   })
 })

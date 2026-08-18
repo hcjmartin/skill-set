@@ -139,6 +139,17 @@ Per-member entry:
 >
 > Note: content bytes are hashed as stored on disk. Checkout-time filters that rewrite bytes (e.g. git `core.autocrlf` or `.gitattributes` text conversion) change the hash before any implementation runs; skill content that must verify across platforms should pin such filters off.
 
+### Algorithm identifiers
+
+Where a digest travels with provenance — a database column, an API field, an algorithm-prefixed out-of-band value (§3) — the recipes defined by this document are named:
+
+| Identifier | Recipe |
+|---|---|
+| `skill-set/folder-v1` | The member content hash, exactly as defined by this section. |
+| `skill-set/set-v1` | The `setHash` rollup, exactly as defined in §5. |
+
+An identifier pins the **entire** recipe — enumeration, normalization, ordering, framing, and digest algorithm. Any change to any of these is a new identifier, never a reinterpretation of an existing one. A consumer encountering an identifier it does not recognize MUST reject the value, not ignore or best-effort it.
+
 ## 7. Generated artifacts & determinism
 
 Everything an implementation generates from a manifest (the set-lock, any human-readable set summary, any index) MUST be deterministic: identical inputs produce identical bytes. For JSON artifacts, the required serialization is the output of ECMA-262 `JSON.stringify(value, null, 2)` — with object keys inserted in UTF-8-byte-order unless a field specifies otherwise — encoded as UTF-8 with LF line endings and a single trailing LF. No timestamps. Determinism is what makes locks merge-friendly and future signing possible.
@@ -150,6 +161,7 @@ The [`examples/`](./examples/) trees are the executable acceptance criteria:
 - every manifest under `examples/valid/` MUST validate against the schema and the §2 rules;
 - every manifest under `examples/invalid/` MUST fail schema validation for exactly the one violation recorded for it in `examples/invalid/violations.json` (the machine-readable form of "one reason per fixture");
 - every manifest under `examples/invalid-rules/` validates against the schema but MUST be rejected under the §2 rules;
-- the lock fixtures under `examples/lock/` follow the same valid/invalid contract against the lock schema.
+- the lock fixtures under `examples/lock/` follow the same valid/invalid contract against the lock schema;
+- every golden vector under [`examples/hash/`](./examples/hash/) MUST reproduce: hashing a folder vector's files per §6, or rolling up a set vector's members per §5, produces exactly the recorded digest.
 
 An independent implementation that agrees with every fixture verdict and reproduces §5–§6 hashes byte-for-byte is conforming.

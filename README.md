@@ -36,6 +36,8 @@ A set is shared as a URL to its manifest. This one is real — it installs a wor
 npx @skill-set/cli add https://skill-sets.md/sets/hash-demo/hash-demo.skill-set.json
 ```
 
+Directory sets can resolve from the slug, e.g., `npx @skill-set/cli add hash-demo` fetches the same manifest. Omitting `.skill-set.json` expands the same way, on any host.
+
 ### Author your own
 
 ```sh
@@ -59,7 +61,7 @@ Publish the manifest and lock anywhere HTTPS-reachable (`share` exports both), a
 | Command | What it does |
 | --- | --- |
 | `init <set> [locators...]` | Scaffold a new set manifest |
-| `add <url\|path> [--hash]` | Fetch a shared set manifest, then install it |
+| `add <url\|path\|name> [--hash]` | Fetch a shared set manifest, then install it |
 | `install <set>` | Install members, skipping ones the lock already satisfies |
 | `build [<set>] [--lock]` | Regenerate SKILL-SET.md files and the skill-sets.json index |
 | `lock <set>` | Record each member's installed content in a set-lock |

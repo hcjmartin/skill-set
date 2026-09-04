@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { DEFAULT_DIRECTORY, expandAddSource } from '../src/commands/add.ts'
 import { INDEX_FILENAME } from '../src/generate.ts'
 import { setHash } from '../src/hash.ts'
 import { createSetLock, parseSetLock, serializeSetLock } from '../src/lock.ts'
@@ -628,6 +629,100 @@ describe('add — trusted-host allowlist', () => {
     expect(code).toBe(0)
     expect(fetched).toEqual([unknownUrl, 'https://unknown-origin.invalid/unknown-set.skill-set.lock.json'])
     expect(existsSync(join(cwd, SETS_DIR, 'unknown-set'))).toBe(true)
+  })
+})
+
+describe('add — shorthand sources', () => {
+  const body = (name: string) =>
+    `${JSON.stringify({ name, version: '1.0.0', description: 'A set.', skills: ['hcjmartin/gamma-repo@gamma'] }, null, 2)}\n`
+  const kitUrl = `${DEFAULT_DIRECTORY}/kit/kit.skill-set.json`
+
+  function tracked(map: Record<string, string>): { fetcher: RunOverrides['fetcher']; fetched: string[] } {
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return url in map
+        ? { ok: true as const, data: map[url]! }
+        : { ok: false as const, error: new Error('unexpected url') as never }
+    }
+    return { fetcher, fetched }
+  }
+
+  it('a bare name resolves to the default directory and records the expanded source', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { fetcher, fetched } = tracked({ [kitUrl]: body('kit') })
+    const { code, out } = await cli(cwd, fake, ['add', 'kit', '--yes'], { fetcher })
+    expect(code).toBe(0)
+    expect(out).toContain(`Adding skill-set from ${kitUrl}...`)
+    expect(fetched[0]).toBe(kitUrl)
+    const index = JSON.parse(readFileSync(join(cwd, SETS_DIR, INDEX_FILENAME), 'utf8')) as {
+      sets: Record<string, { source?: string }>
+    }
+    expect(index.sets['kit']!.source).toBe(kitUrl)
+  })
+
+  it('a bare name carries a #sha256= fragment through to the pin', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { fetcher, fetched } = tracked({ [kitUrl]: body('kit') })
+    // A wrong pin proves the fragment reached verification; the fetch stays fragment-free.
+    const { code, err } = await cli(cwd, fake, ['add', `kit#sha256=${'b'.repeat(64)}`, '--yes'], { fetcher })
+    expect(code).toBe(3)
+    expect(err).toContain('did not match the verification hash')
+    expect(fetched[0]).toBe(kitUrl)
+  })
+
+  it.each([
+    [`${DEFAULT_DIRECTORY}/kit`],
+    [`${DEFAULT_DIRECTORY}/kit/`],
+  ])('a directory URL %s expands to the manifest inside it', async (short) => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { fetcher, fetched } = tracked({ [kitUrl]: body('kit') })
+    const { code } = await cli(cwd, fake, ['add', short, '--yes'], { fetcher })
+    expect(code).toBe(0)
+    expect(fetched[0]).toBe(kitUrl)
+  })
+
+  it('an unknown-host directory URL expands but still prompts for the host', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const full = 'https://unknown-origin.invalid/sets/kit/kit.skill-set.json'
+    const { fetcher, fetched } = tracked({ [full]: body('kit') })
+    const { code } = await cli(cwd, fake, ['add', 'https://unknown-origin.invalid/sets/kit'], {
+      fetcher,
+      confirmAnswers: [true, true],
+    })
+    expect(code).toBe(0)
+    expect(fetched[0]).toBe(full)
+  })
+
+  it('expandAddSource leaves non-shorthand sources untouched', () => {
+    const never = () => false
+    // Already a manifest URL, with and without a fragment.
+    expect(expandAddSource(`${kitUrl}#sha256=${'a'.repeat(64)}`, never)).toBe(`${kitUrl}#sha256=${'a'.repeat(64)}`)
+    expect(expandAddSource(kitUrl, never)).toBe(kitUrl)
+    // Last segment is not a bare set name (dots, uppercase, or nothing at all).
+    expect(expandAddSource('https://skill-sets.md/sets/kit.skill-set.lock.json', never)).toBe('https://skill-sets.md/sets/kit.skill-set.lock.json')
+    expect(expandAddSource('https://skill-sets.md/sets/Kit', never)).toBe('https://skill-sets.md/sets/Kit')
+    expect(expandAddSource('https://skill-sets.md', never)).toBe('https://skill-sets.md')
+    // Paths and http URLs pass through for the existing flows to accept or reject.
+    expect(expandAddSource('./kit', never)).toBe('./kit')
+    expect(expandAddSource('http://example.test/kit', never)).toBe('http://example.test/kit')
+  })
+
+  it('expandAddSource expands directory URLs and bare names, keeping the fragment', () => {
+    const never = () => false
+    expect(expandAddSource(`${DEFAULT_DIRECTORY}/kit#sha256=${'a'.repeat(64)}`, never)).toBe(`${kitUrl}#sha256=${'a'.repeat(64)}`)
+    expect(expandAddSource('kit', never)).toBe(kitUrl)
+    expect(expandAddSource(`kit#sha256=${'a'.repeat(64)}`, never)).toBe(`${kitUrl}#sha256=${'a'.repeat(64)}`)
+  })
+
+  it('expandAddSource prefers an existing local file over the directory', () => {
+    const exists = (path: string) => path === 'kit'
+    expect(expandAddSource('kit', exists)).toBe('kit')
+    expect(expandAddSource('other', exists)).toBe(`${DEFAULT_DIRECTORY}/other/other.skill-set.json`)
   })
 })
 

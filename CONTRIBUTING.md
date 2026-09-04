@@ -21,6 +21,15 @@ pnpm install --frozen-lockfile
 - New behaviour needs tests in the existing style: table-driven where possible, hermetic (the upstream `skills` CLI is faked, never hit over the network in PR CI).
 - Comments are one-liners, and only where the code alone would mislead; the reasoning behind non-obvious choices goes in the change's changeset entry (it becomes the published CHANGELOG).
 
+## Releasing
+
+Publishing is automated with [changesets](https://github.com/changesets/changesets) and gated on one PR:
+
+1. A merged PR carrying changesets makes the release workflow open (or refresh) a **Version Packages** PR, which consumes pending changesets into version bumps and CHANGELOG entries.
+2. Nothing publishes until a maintainer merges that PR — its merge triggers the npm publish (OIDC trusted publishing, `release` environment) and the GitHub release tags.
+
+Doc-only changes need no changeset and never trigger a release. A first-time publish of a *new* package cannot use OIDC and needs a one-off manual `npm publish` before the trusted publisher is attached.
+
 ## Dependency rules
 
 The workspace enforces a supply-chain posture; PRs that break it fail install or review:

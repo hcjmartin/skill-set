@@ -20,7 +20,7 @@ skill-set/<version> (wraps skills@1.5.14, pinned)
 | Command | Usage | Does |
 | --- | --- | --- |
 | [`init`](#init) | `init <set> <locator> [locators...]` | Scaffold a new set manifest |
-| [`add`](#add) | `add <url\|path>` | Fetch a shared set manifest, then install it |
+| [`add`](#add) | `add <url\|path\|name>` | Fetch a shared set manifest, then install it |
 | [`install`](#install) | `install <set>` | Install members, skipping ones the lock already satisfies |
 | [`build`](#build) | `build [<set>] [--lock]` | Regenerate SKILL-SET.md files and the skill-sets.json index |
 | [`lock`](#lock) | `lock <set>` | Record each member's installed content in a set-lock |
@@ -40,10 +40,12 @@ Scaffolds `.agents/skills/skill-sets/<set>/<set>.skill-set.json` at version `0.1
 ### add
 
 ```shellscript
-skill-set add <url|path>
+skill-set add <url|path|name>
 ```
 
 Acquires a shared set: fetches the manifest (HTTPS only; at most 5 redirects; 1 MiB response cap) or reads a local path, validates it against the schema and rules, prints the set summary with every member and its source, then asks for confirmation before writing anything. The fetched bytes are written verbatim as `<name>.skill-set.json` — the filename comes from the manifest's `name` — and the normal install flow runs.
+
+Shorthand sources expand to the full manifest URL before anything is fetched, and the expanded URL is printed first. An `https://` URL whose last path segment is a bare set name will auto-resolve to `/<segment>.skill-set.json`. A bare set name with no matching local file resolves against the [skill-sets.md](https://skill-sets.md) reference directory: `skill-set add hash-demo` fetches `https://skill-sets.md/sets/hash-demo/hash-demo.skill-set.json`. Both forms still accept a `#sha256=` fragment and resolve locks if available.
 
 Hosts other than recognised skill-set providers prompt for confirmation before any bytes are fetched, and redirects may not hop to a new host. An existing set with the same name is an error, never a silent overwrite.
 

@@ -59,6 +59,8 @@ A skill-set is shareable as **a URL to its manifest** — any HTTPS location ser
 3. Writing it into the project as `<name>.skill-set.json`, with the filename derived from the manifest's `name`. If a set file of that name already exists, the implementation MUST fail rather than silently overwrite.
 4. Proceeding with normal installation, presenting the member/source summary first.
 
+**Shorthand manifest URLs** (non-normative). The name ↔ filename rule (§2) means a conforming manifest URL always ends in `.skill-set.json`. Implementations MAY therefore treat an HTTPS URL whose final path segment is a bare set name as shorthand, expanding it to `<url>/<segment>.skill-set.json` before fetching (and before stripping any `#sha256=` fragment, which shorthand shares may carry). Resolving a bare set name against a default host is implementation policy, outside this specification.
+
 ### Receipt-time verification
 
 The manifest carries locators, never hashes (§1), so acquisition alone is trust-on-first-use: the first install resolves whatever the locators currently point at. Two optional, composable mechanisms let a recipient verify received content against the author's resolved reality (§5) before it is used:

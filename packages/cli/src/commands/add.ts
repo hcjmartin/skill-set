@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import { createSetLock, LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLock } from '../lock.ts'
-import { MANIFEST_SUFFIX, parseManifest, type Manifest } from '../manifest.ts'
+import { MANIFEST_SUFFIX, NAME_PATTERN, parseManifest, type Manifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
 import { parseLocator, reservedMembers, reservedNameError, SKILLS_DIR } from '../resolver.ts'
 import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers } from '../staging.ts'
@@ -10,7 +10,7 @@ import { installSet } from './install.ts'
 import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
-export const ADD_USAGE = 'skill-set add <url|path> [--hash sha256:<hex>]'
+export const ADD_USAGE = 'skill-set add <url|path|name> [--hash sha256:<hex>]'
 
 /** Spec §3 fetch bounds: at most five redirects, at most 1 MiB of manifest. */
 const MAX_REDIRECTS = 5
@@ -61,6 +61,39 @@ function isAllowedHost(host: string): boolean {
   return ALLOWED_HOSTS.includes(host)
 }
 
+/** Where bare set names resolve: the reference directory's sets root. */
+export const DEFAULT_DIRECTORY = 'https://skill-sets.md/sets'
+
+/**
+ * Expands shorthand sources to a full manifest URL, before the #sha256= fragment is split off.
+ * Spec §2 ties `name` to the manifest filename, so a conforming manifest URL always ends in
+ * `.skill-set.json`: an https URL whose last path segment is a bare set name is shorthand for
+ * `<url>/<segment>.skill-set.json` (any host), and a bare name with no matching local file is
+ * shorthand for the same path under the default directory. Everything else passes through.
+ */
+export function expandAddSource(raw: string, exists: (path: string) => boolean = existsSync): string {
+  const at = raw.indexOf('#')
+  const base = at === -1 ? raw : raw.slice(0, at)
+  const fragment = at === -1 ? '' : raw.slice(at)
+  if (/^https:\/\//i.test(raw)) {
+    let url: URL
+    try {
+      url = new URL(base)
+    } catch {
+      return raw
+    }
+    if (url.pathname.endsWith(MANIFEST_SUFFIX)) return raw
+    const segments = url.pathname.split('/').filter((s) => s !== '')
+    const slug = segments[segments.length - 1]
+    if (slug === undefined || !NAME_PATTERN.test(slug)) return raw
+    return `${url.origin}/${segments.join('/')}/${slug}${MANIFEST_SUFFIX}${url.search}${fragment}`
+  }
+  if (/^http:\/\//i.test(raw)) return raw
+  // A local file of the same name wins, keeping existing path behaviour byte-for-byte.
+  if (!NAME_PATTERN.test(base) || exists(raw) || exists(base)) return raw
+  return `${DEFAULT_DIRECTORY}/${base}/${base}${MANIFEST_SUFFIX}${fragment}`
+}
+
 /** Host of an https URL, or undefined for non-https / unparseable sources (local paths). */
 function httpsHost(source: string): string | undefined {
   if (!/^https:\/\//i.test(source)) return undefined
@@ -77,9 +110,13 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const [rawSource, ...extra] = split.data.positionals
   if (rawSource === undefined || extra.length > 0) return usageError('add takes exactly one manifest URL or path', ADD_USAGE)
 
+  // Shorthand expansion runs first so a bare name or directory URL can still carry a #sha256=
+  // fragment; the "Adding skill-set from" line below then shows the real fetch target.
+  const expanded = expandAddSource(rawSource)
+
   // The pinned hash comes from --hash and/or a #sha256= URL fragment; the fragment is a
   // trust anchor, not part of the location, so it is stripped before any fetch or record.
-  const pin = resolvePinnedHash(rawSource, split.data.values.get('--hash'))
+  const pin = resolvePinnedHash(expanded, split.data.values.get('--hash'))
   if (!pin.ok) return pin
   const { source, hash } = pin.data
 

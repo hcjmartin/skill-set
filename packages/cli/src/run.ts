@@ -23,7 +23,7 @@ interface CommandEntry {
 
 const COMMANDS: Record<string, CommandEntry> = {
   init: { usage: 'init <set> [locators...]', describe: 'Scaffold a new set manifest', handler: cmdInit },
-  add: { usage: 'add <url|path> [--hash]', describe: 'Fetch a shared set manifest, then install it', handler: cmdAdd },
+  add: { usage: 'add <url|path|name> [--hash]', describe: 'Fetch a shared set manifest, then install it', handler: cmdAdd },
   install: { usage: 'install <set>', describe: 'Install members, skipping ones the lock already satisfies', handler: cmdInstall },
   build: { usage: 'build [<set>] [--lock]', describe: 'Regenerate SKILL-SET.md files and the skill-sets.json index', handler: cmdBuild },
   lock: { usage: 'lock <set>', describe: "Record each member's installed content in a set-lock", handler: cmdLock },

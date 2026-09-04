@@ -2,7 +2,7 @@
 
 Runtime-agnostic primitives for the [skill-set format](https://github.com/hcjmartin/skill-set/blob/main/spec/draft/README.md): content hashes, algorithm identifiers, and lock-file types.
 
-Built for servers, edge runtimes and registries outside of [`@skill-set/cli`](https://www.npmjs.com/package/@skill-set/cli), so you don't have to port. Inputs are `(path, bytes)` pairs rather than directories, and digests use WebCrypto, so the same code runs on Node ≥20, Cloudflare Workers, Deno, Bun, and browsers etc. 
+Built for servers, edge runtimes and registries outside of [`@skill-set/cli`](https://www.npmjs.com/package/@skill-set/cli), so you don't have to port. Inputs are `(path, bytes)` pairs rather than directories, and digests use WebCrypto, so the same code runs on Node ≥20, Cloudflare Workers, Deno, Bun, and browsers.
 
 Zero dependencies.
 
@@ -48,7 +48,7 @@ Hashes are byte-identical to the reference CLI's and to any conforming implement
 | `skillMarkdownFolderHash(content)` | Folder hash of a lone `SKILL.md` — the common authoring case. |
 | `setHash(members)` | Set-lock rollup (spec §5) over `{ locator: computedHash }`. |
 | `folderHashInput(files)` / `setHashInput(members)` | The exact canonical byte sequences the recipes digest, for synchronous or streaming hashers (the CLI feeds these to `node:crypto`). |
-| `FOLDER_HASH_ALGORITHM` / `SET_HASH_ALGORITHM` | Spec lgorithm identifiers, for storing or transmitting digests with provenance. |
+| `FOLDER_HASH_ALGORITHM` / `SET_HASH_ALGORITHM` | Spec algorithm identifiers, for storing or transmitting digests with provenance. |
 | `SkillSetLock` / `SkillSetLockMember` | Typed shape of `<name>.skill-set.lock.json` (types only — schema validation stays the reader's responsibility). |
 | `compatFolderHash(files)` / `compatFolderHashInput(files)` | **Not a spec algorithm.** Byte-compatible with `vercel-labs/skills` `computeSkillFolderHash` (v1.5.x), for `skills-lock.json` interop only; locale-sensitive by upstream design. |
 

@@ -3,8 +3,8 @@
  *
  * Runtime-agnostic by construction — inputs are (path, bytes) pairs rather than
  * a directory, and digests use WebCrypto — so the same code runs on Node ≥20,
- * and browsers. Enumerating a real folder into pairs is the caller's 
- * platform-specific part (the reference CLI's filesystem adapter skips 
+ * and browsers. Enumerating a real folder into pairs is the caller's
+ * platform-specific part (the reference CLI's filesystem adapter skips
  * `.git`/`node_modules` dirs and symlinks per §6.1).
  *
  * The `*Input` functions expose the exact canonical byte sequence each recipe

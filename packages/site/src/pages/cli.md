@@ -9,11 +9,7 @@ lede: The CLI ships as @skill-set/cli with a single bin, skill-set. Run it witho
 npx @skill-set/cli <command> [args] [flags] [-- <args for the skills CLI>]
 ```
 
-Resolution and installation of individual skills are delegated to the upstream [skills CLI](https://skills.sh), pinned to `skills@1.5.14`. `skill-set --version` prints both versions:
-
-```
-skill-set/<version> (wraps skills@1.5.14, pinned)
-```
+Resolution and installation of individual skills are delegated to the upstream [skills CLI](https://skills.sh), pinned to `skills@1.5.14` — every spawned invocation names the pin, e.g. `npx skills@1.5.14 add <locator>`.
 
 ## Commands
 

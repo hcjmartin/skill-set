@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import pkg from '../package.json' with { type: 'json' }
 import { SUPPORTED_SCHEMA_VERSIONS } from '../src/manifest.ts'
-import { SKILLS_PIN } from '../src/resolver.ts'
 import { VERSION } from '../src/run.ts'
 import { runCommand } from '../src/spawn.ts'
 
@@ -54,15 +53,14 @@ describe('built bin wiring', () => {
     expect(shim).toContain("import('../dist/cli.mjs')")
   })
 
-  it('the built bin runs and reports both versions', async () => {
+  it('the built bin runs and reports the version', async () => {
     // Requires a prior build (`check` and CI both build before testing).
     expect(existsSync(join(pkgDir, 'dist', 'cli.mjs'))).toBe(true)
     const result = await runCommand(process.execPath, [binPath, '--version'], { capture: true })
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data.exitCode).toBe(0)
-      expect(result.data.stdout).toContain(`skill-set/${VERSION}`)
-      expect(result.data.stdout).toContain(`skills@${SKILLS_PIN}`)
+      expect(result.data.stdout).toBe(`skill-set/${VERSION}\n`)
     }
   })
 

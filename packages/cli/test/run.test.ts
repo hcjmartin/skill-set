@@ -43,11 +43,10 @@ describe('run — dispatch and meta-flags', () => {
     expect(err).toBe('')
   })
 
-  it('reports both our version and the upstream pin with --version', async () => {
+  it('prints exactly the version with --version', async () => {
     const { code, out } = await cli(['--version'])
     expect(code).toBe(0)
-    expect(out).toContain(`skill-set/${VERSION}`)
-    expect(out).toContain('skills@1.5.14')
+    expect(out).toBe(`skill-set/${VERSION}\n`)
   })
 
   it('intercepts --version after a verb before any dispatch', async () => {

@@ -1,6 +1,6 @@
 import pkg from '../package.json' with { type: 'json' }
 import { ErrorCodes, SkillSetError, type Result, type SkillSetErrorCode } from './errors.ts'
-import { SKILLS_PIN, type CommandRunner } from './resolver.ts'
+import { type CommandRunner } from './resolver.ts'
 import { createUi, type Writer } from './ui.ts'
 import { cmdAdd } from './commands/add.ts'
 import { cmdBuild } from './commands/build.ts'
@@ -50,7 +50,7 @@ Flags:
   --dry-run             Print what would run or be written; change nothing, spawn nothing
   --hash sha256:<hex>   For add: keep the set only if its content matches this set hash
   --help, -h            Show this help
-  --version, -v         Show the skill-set version and the pinned skills version
+  --version, -v         Show the skill-set version
 
 Args after "--" pass through to the skills CLI verbatim.
   e.g. "skill-set install demo -- --agent claude-code cursor" installs to those agents only.
@@ -91,7 +91,7 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
     return 0
   }
   if (ours.includes('--version') || ours.includes('-v')) {
-    stdout.write(`skill-set/${VERSION} (wraps skills@${SKILLS_PIN}, pinned)\n`)
+    stdout.write(`skill-set/${VERSION}\n`)
     return 0
   }
 

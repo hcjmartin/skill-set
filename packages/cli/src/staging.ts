@@ -23,7 +23,6 @@ export async function stageManifestMembers(
     cwd: string
     runner?: CommandRunner
     extraArgs?: readonly string[]
-    capture?: boolean
     label: string
     locators?: readonly string[]
     onStage?: (locator: string, invocation: SkillsInvocation) => void
@@ -41,10 +40,16 @@ export async function stageManifestMembers(
         cwd: staging.data,
         runner: opts.runner,
         extraArgs: opts.extraArgs,
-        capture: opts.capture,
       })
-      if (resolved.ok) members[locator] = resolved.data
-      else failed.push({ locator, code: resolved.error.code, message: resolved.error.message })
+      if (resolved.ok) {
+        const { skill, computedHash, sourceType, ref } = resolved.data
+        members[locator] = {
+          skill,
+          computedHash,
+          ...(sourceType === undefined ? {} : { sourceType }),
+          ...(ref === undefined ? {} : { ref }),
+        }
+      } else failed.push({ locator, code: resolved.error.code, message: resolved.error.message })
     }
     if (failed.length > 0) {
       removeStagingProject(opts.cwd, staging.data)

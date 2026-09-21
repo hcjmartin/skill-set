@@ -13,6 +13,8 @@ import {
   SETS_DIR_RESTORED_NOTICE,
   SKILLS_DIR,
 } from '../resolver.ts'
+import type { UpstreamSecurity } from '../upstream-add.ts'
+import { renderSecuritySummary, renderUpstreamPanel, watchForUpstreamExpansion } from '../upstream-output.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const INSTALL_USAGE = 'skill-set install <set>'
@@ -93,29 +95,47 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
     return { ok: true, data: { name, dryRun: true, wouldInstall: pending.map((p) => p.locator), skipped } }
   }
 
-  const installed: Array<{ locator: string; skill: string; computedHash: string }> = []
+  const installed: Array<{
+    locator: string
+    skill: string
+    computedHash: string
+    security?: UpstreamSecurity
+  }> = []
   const failed: Array<{ locator: string; code: string; message: string }> = []
-  // Sequential on purpose: discovery diffs skills-lock.json around each spawn.
-  for (const p of pending) {
-    ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(buildAddInvocation(p.locator), ctx.passthrough)}`))
-    const resolved = await resolveMember(p.locator, {
-      cwd: ctx.cwd,
-      runner: ctx.runner,
-      extraArgs: ctx.passthrough,
-      capture: ctx.ui.json,
-      onSetsDirRestored: () => ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE)),
-    })
-    if (resolved.ok) {
-      installed.push({ locator: p.locator, skill: resolved.data.skill, computedHash: resolved.data.computedHash })
-    } else {
-      failed.push({ locator: p.locator, code: resolved.error.code, message: resolved.error.message })
+  const expansion = watchForUpstreamExpansion(ctx.ui)
+  try {
+    // Sequential on purpose: the upstream CLI and its project lock are not concurrency-safe.
+    for (const p of pending) {
+      ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(buildAddInvocation(p.locator), ctx.passthrough)}`))
+      if (ctx.ui.interactive) ctx.ui.out(ctx.ui.style('dim', 'press e to expand'))
+      const parsed = parseLocator(p.locator)
+      const resolved = await resolveMember(p.locator, {
+        cwd: ctx.cwd,
+        runner: ctx.runner,
+        extraArgs: ctx.passthrough,
+        onSetsDirRestored: () => ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE)),
+        onUpstreamOutput: (output) => renderUpstreamPanel(ctx.ui, parsed.skill ?? parsed.source, output, expansion.expanded()),
+      })
+      if (resolved.ok) {
+        installed.push({
+          locator: p.locator,
+          skill: resolved.data.skill,
+          computedHash: resolved.data.computedHash,
+          ...(resolved.data.security === undefined ? {} : { security: resolved.data.security }),
+        })
+      } else {
+        failed.push({ locator: p.locator, code: resolved.error.code, message: resolved.error.message })
+      }
     }
+  } finally {
+    expansion.close()
   }
 
   const summary = { name, installed, skipped, failed }
   ctx.ui.out(
     `${failed.length === 0 ? ctx.ui.style('green', '✓') : ctx.ui.style('red', '✗')} ${installed.length} installed, ${skipped.length} skipped, ${failed.length} failed`,
   )
+  renderSecuritySummary(ctx.ui, installed)
 
   if (failed.length > 0) {
     return {

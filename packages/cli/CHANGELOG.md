@@ -1,5 +1,13 @@
 # @skill-set/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- 2c14f02: Capture the structured output from `skills add --json`. Install summaries now aggregate passed security checks and attribute each warning or issue to its skill.
+
+  Interactive installs show a compact view of the captured upstream output. Press `e` during an install to expand this view.
+
 ## 0.5.1
 
 ### Patch Changes

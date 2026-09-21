@@ -311,7 +311,6 @@ async function verifyReceipt(
         cwd: ctx.cwd,
         runner: ctx.runner,
         extraArgs: ctx.passthrough,
-        capture: ctx.ui.json,
         locators: preExistingLocators,
         label: `verify set ${JSON.stringify(name)}`,
         onStage: (_locator, invocation) => {

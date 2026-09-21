@@ -14,62 +14,62 @@ const TABLE: Array<{
     locator: 'hcjmartin/skills-repo@skill-creator',
     source: 'hcjmartin/skills-repo',
     skill: 'skill-creator',
-    command: `npx -y skills@${SKILLS_PIN} add hcjmartin/skills-repo --skill skill-creator --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add hcjmartin/skills-repo --skill skill-creator --yes --json`,
   },
   {
     locator: 'vercel-labs/agent-skills@web-design-guidelines#v2.1.0',
     source: 'vercel-labs/agent-skills',
     skill: 'web-design-guidelines',
     ref: 'v2.1.0',
-    command: `npx -y skills@${SKILLS_PIN} add vercel-labs/agent-skills#v2.1.0 --skill web-design-guidelines --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add vercel-labs/agent-skills#v2.1.0 --skill web-design-guidelines --yes --json`,
   },
   {
     locator: 'https://github.com/hcjmartin/agent-skills@review-code#8f7e6d5',
     source: 'https://github.com/hcjmartin/agent-skills',
     skill: 'review-code',
     ref: '8f7e6d5',
-    command: `npx -y skills@${SKILLS_PIN} add https://github.com/hcjmartin/agent-skills#8f7e6d5 --skill review-code --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add https://github.com/hcjmartin/agent-skills#8f7e6d5 --skill review-code --yes --json`,
   },
   {
     locator: 'https://flocker.md/skills@research-notes',
     source: 'https://flocker.md/skills',
     skill: 'research-notes',
-    command: `npx -y skills@${SKILLS_PIN} add https://flocker.md/skills --skill research-notes --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add https://flocker.md/skills --skill research-notes --yes --json`,
   },
   {
     locator: 'git@github.com:hcjmartin/skills-repo@deploy-helper',
     source: 'git@github.com:hcjmartin/skills-repo',
     skill: 'deploy-helper',
-    command: `npx -y skills@${SKILLS_PIN} add git@github.com:hcjmartin/skills-repo --skill deploy-helper --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add git@github.com:hcjmartin/skills-repo --skill deploy-helper --yes --json`,
   },
   {
     // The git@ user-info @ is not a skill separator: what follows is not a valid skill name.
     locator: 'git@github.com:hcjmartin/skills-repo',
     source: 'git@github.com:hcjmartin/skills-repo',
-    command: `npx -y skills@${SKILLS_PIN} add git@github.com:hcjmartin/skills-repo --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add git@github.com:hcjmartin/skills-repo --yes --json`,
   },
   {
     locator: './vendor/skills@my-skill',
     source: './vendor/skills',
     skill: 'my-skill',
-    command: `npx -y skills@${SKILLS_PIN} add ./vendor/skills --skill my-skill --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add ./vendor/skills --skill my-skill --yes --json`,
   },
   {
     locator: 'owner/repo',
     source: 'owner/repo',
-    command: `npx -y skills@${SKILLS_PIN} add owner/repo --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add owner/repo --yes --json`,
   },
   {
     // A trailing empty ref is meaningless and normalized away.
     locator: 'owner/repo#',
     source: 'owner/repo',
-    command: `npx -y skills@${SKILLS_PIN} add owner/repo --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add owner/repo --yes --json`,
   },
   {
     // No path-like source before the @, so this is not a skill split.
     locator: 'git@server',
     source: 'git@server',
-    command: `npx -y skills@${SKILLS_PIN} add git@server --yes`,
+    command: `npx -y skills@${SKILLS_PIN} add git@server --yes --json`,
   },
 ]
 

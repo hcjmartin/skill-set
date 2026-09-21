@@ -60,8 +60,8 @@ describe.runIf(RUN)('upstream compatibility (RUN_COMPAT=1)', () => {
       // The guard itself: upstream hashed the source folder; we must reproduce it byte-for-byte.
       expect(compatFolderHash(source)).toBe(entry!.computedHash)
 
-      // Reinstalling the same unnamed locator adds no lock key, so discovery must fall
-      // through to the source lookup (tier 2) and still name the skill.
+      // Reinstalling the same unnamed locator must still use the structured result
+      // to identify the skill when the upstream lock entry already exists.
       const again = await resolveMember(source, { cwd })
       expect(again.ok, again.ok ? '' : again.error.message).toBe(true)
       if (!again.ok) return

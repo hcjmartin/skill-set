@@ -128,6 +128,7 @@ describe('run — intro line', () => {
     await run(['banana'], { stdout: w.stdout, stderr: w.stderr, interactive: false, ci: false, intro: true })
     const { out, err } = w.text()
     expect(err).toContain(`{skill-set} v${VERSION} — define, share`)
+    expect(err).toContain('sets of agent skills\n\nerror Unknown command')
     expect(out).not.toContain('{skill-set}')
   })
 

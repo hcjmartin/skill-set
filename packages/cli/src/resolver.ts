@@ -6,9 +6,15 @@ import { specFolderHash } from './hash.ts'
 import { parseSkillsLock } from './lock.ts'
 import { NAME_PATTERN } from './manifest.ts'
 import { runCommand, type SpawnOptions, type SpawnOutcome } from './spawn.ts'
+import { stripTerminalSequences } from './terminal-text.ts'
+import {
+  parseUpstreamAddResults,
+  selectInstalledResult,
+  type UpstreamSecurity,
+} from './upstream-add.ts'
 
 /** Upstream pin, exact: every bump is deliberate (the weekly compat job watches upstream drift). */
-export const SKILLS_PIN = '1.5.14'
+export const SKILLS_PIN = '1.7.0'
 
 /** Where resolved skills land, relative to the project root (spec §4; upstream UNIVERSAL_SKILLS_DIR). */
 export const SKILLS_DIR = '.agents/skills'
@@ -71,10 +77,10 @@ export function buildAddInvocation(locator: string, opts?: { global?: boolean })
   const sourceArg = ref === undefined ? source : `${source}#${ref}`
   const args = ['-y', `skills@${SKILLS_PIN}`, 'add', sourceArg]
   if (skill !== undefined) args.push('--skill', skill)
-  args.push('--yes')
+  args.push('--yes', '--json')
   if (opts?.global === true) args.push('--global')
-  // Suppresses upstream telemetry events via its own opt-out; its audit fetch
-  // (add-skill.vercel.sh) is separate and not opt-out-able.
+  // Preserves the repository's upstream telemetry opt-out. In skills@1.7.0 the same
+  // opt-out also suppresses advisory audits, which the result reports as security: null.
   const env: Record<string, string> = {}
   if (buildConfig.suppressUpstreamTelemetry) env.DISABLE_TELEMETRY = '1'
   return { command: 'npx', args, env }
@@ -191,6 +197,8 @@ export interface ResolvedMember {
   computedHash: string
   sourceType?: string
   ref?: string
+  /** Structured audit data from `skills add --json`. */
+  security?: UpstreamSecurity
 }
 
 /**
@@ -266,9 +274,8 @@ export interface Resolver {
 }
 
 /**
- * Sole v1 resolver: shells out to the pinned `npx skills` and reads back its project lock.
- * Skill discovery diffs skills-lock.json around the spawn, so resolves sharing one cwd
- * must run sequentially, never concurrently.
+ * Sole v1 resolver: shells out to the pinned `npx skills`, parses its JSON result, and
+ * checks the installed skill against the project lock and folder.
  */
 export async function resolveMember(
   locator: string,
@@ -276,8 +283,8 @@ export async function resolveMember(
     cwd: string
     runner?: CommandRunner
     extraArgs?: readonly string[]
-    capture?: boolean
     onSetsDirRestored?: () => void
+    onUpstreamOutput?: (output: string) => void
   },
 ): Promise<Result<ResolvedMember>> {
   if (locator.trim() === '') {
@@ -297,8 +304,8 @@ export async function resolveMember(
     if (probe.data !== 1) return preInstallDiscoveryFailure(locator, parsed.source, probe.data)
   }
 
-  const before = readLockSkills(opts.cwd)
-  if (!before.ok) return before
+  const existingLock = readLockSkills(opts.cwd)
+  if (!existingLock.ok) return existingLock
 
   // The upstream CLI owns `.agents/skills/<name>` folders wholesale, so a skill claiming the
   // reserved name would overwrite the set definitions living inside the skills dir. The name is
@@ -313,49 +320,35 @@ export async function resolveMember(
   const run = await (opts.runner ?? runCommand)(invocation.command, args, {
     cwd: opts.cwd,
     env: invocation.env,
-    capture: opts.capture,
+    capture: true,
   })
   if (restoreSetsDir(opts.cwd, guard)) opts.onSetsDirRestored?.()
   if (!run.ok) return run
+  opts.onUpstreamOutput?.(run.data.stderr)
+  const upstreamResults = parseUpstreamAddResults(run.data.stdout)
+  if (!upstreamResults.ok) return upstreamResults
   if (run.data.exitCode !== 0) {
     return fail(
       ErrorCodes.RESOLVE_FAILED,
       `Resolving ${JSON.stringify(locator)} failed: the skills CLI exited with code ${run.data.exitCode}`,
       {
-        hint: opts.capture === true ? 'The captured skills output is in data.stderr.' : 'See the skills output above for the cause.',
+        hint: 'The captured skills output is in data.stderr.',
         data: {
           locator,
           exitCode: run.data.exitCode,
-          ...(opts.capture === true ? { stderr: run.data.stderr.slice(-2000) } : {}),
+          upstreamResults: upstreamResults.data,
+          stderr: run.data.stderr.slice(-2000),
         },
       },
     )
   }
+  const upstream = selectInstalledResult(upstreamResults.data, parsed.skill)
+  if (!upstream.ok) return upstream
 
   const after = readLockSkills(opts.cwd)
   if (!after.ok) return after
 
-  let skillName: string
-  if (parsed.skill !== undefined) {
-    skillName = parsed.skill
-  } else {
-    // Tier 1: a fresh install surfaces as exactly one new lock key.
-    const added = Object.keys(after.data).filter((k) => !(k in before.data))
-    if (added.length === 1) {
-      skillName = added[0]!
-    } else if (added.length > 1) {
-      return discoveryFailure(locator, parsed.source, added)
-    } else {
-      // Tier 2 (reinstall: upstream updates the entry in place, no key churn): match the
-      // locator's source byte-for-byte against lock entries; a unique owner names the skill.
-      const candidates = Object.keys(after.data).filter((k) => {
-        const e = after.data[k]!
-        return e.source === parsed.source && (parsed.ref === undefined || e.ref === parsed.ref)
-      })
-      if (candidates.length !== 1) return discoveryFailure(locator, parsed.source, candidates)
-      skillName = candidates[0]!
-    }
-  }
+  const skillName = upstream.data.name
 
   // An unnamed locator can only be found out post-spawn; the set files are already restored
   // above, so all that remains is refusing the member and dropping its upstream lock entry.
@@ -392,6 +385,7 @@ export async function resolveMember(
       computedHash: specFolderHash(folder),
       ...(entry.sourceType === undefined ? {} : { sourceType: entry.sourceType }),
       ...(entry.ref === undefined ? {} : { ref: entry.ref }),
+      ...(upstream.data.security === undefined ? {} : { security: upstream.data.security }),
     },
   }
 }
@@ -444,31 +438,6 @@ async function probeMemberCount(
   return { ok: true, data: Number.parseInt(count, 10) }
 }
 
-/** Removes C0/C1 controls and ANSI CSI sequences from captured upstream status output. */
-function stripTerminalSequences(value: string): string {
-  let plain = ''
-  for (let index = 0; index < value.length; index++) {
-    const codePoint = value.codePointAt(index)!
-    if (codePoint === 0x1b) {
-      if (value.codePointAt(index + 1) === 0x5b) {
-        index += 2
-        while (index < value.length) {
-          const final = value.codePointAt(index)!
-          if (final >= 0x40 && final <= 0x7e) break
-          index++
-        }
-      }
-      continue
-    }
-    if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) {
-      if (codePoint === 0x0a) plain += '\n'
-      continue
-    }
-    plain += value[index]!
-  }
-  return plain
-}
-
 function preInstallDiscoveryFailure(locator: string, source: string, count: number): Result<never> {
   return fail(
     ErrorCodes.RESOLVE_AMBIGUOUS,
@@ -476,32 +445,6 @@ function preInstallDiscoveryFailure(locator: string, source: string, count: numb
     {
       hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${source}@<skill-name>`)}.`,
       data: { locator, source, count },
-    },
-  )
-}
-
-/**
- * The factual discovery error (tier 3): states what happened, lists the candidate skills
- * for the member's source, and closes with a copy-paste fix. Written for an installer
- * who did not author the set.
- */
-function discoveryFailure(locator: string, source: string, candidates: string[]): Result<never> {
-  if (candidates.length > 0) {
-    return fail(
-      ErrorCodes.RESOLVE_AMBIGUOUS,
-      `Member ${JSON.stringify(locator)} was installed, but matches ${candidates.length} skills in ${SKILLS_LOCK_FILE}: ${candidates.join(', ')}. A set member must resolve to exactly one skill.`,
-      {
-        hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${source}@${candidates[0]!}`)}.`,
-        data: { locator, source, candidates },
-      },
-    )
-  }
-  return fail(
-    ErrorCodes.RESOLVE_UNMATCHED,
-    `Member ${JSON.stringify(locator)} was installed, but could not be matched to a skill in ${SKILLS_LOCK_FILE}.`,
-    {
-      hint: `Name the skill in the set member, e.g. ${JSON.stringify(`${source}@<skill-name>`)}.`,
-      data: { locator, source, candidates },
     },
   )
 }

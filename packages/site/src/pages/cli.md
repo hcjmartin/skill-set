@@ -9,7 +9,7 @@ lede: The CLI ships as @skill-set/cli with a single bin, skill-set. Run it witho
 npx @skill-set/cli <command> [args] [flags] [-- <args for the skills CLI>]
 ```
 
-Resolution and installation of individual skills are delegated to the upstream [skills CLI](https://skills.sh), pinned to `skills@1.5.14` — every spawned invocation names the pin, e.g. `npx skills@1.5.14 add <locator>`.
+Resolution and installation of individual skills are delegated to the upstream [skills CLI](https://skills.sh), pinned to `skills@1.7.0` — every spawned invocation names the pin, e.g. `npx skills@1.7.0 add <locator>`.
 
 ## Commands
 
@@ -53,7 +53,9 @@ Hosts other than recognised skill-set providers prompt for confirmation before a
 skill-set install <set>
 ```
 
-Before anything installs, every set in the project is checked for members pinned to conflicting refs — a conflict aborts with exit code 4 (see the [FAQ](/faq/#what-happens-when-two-sets-want-the-same-skill)). Members whose locked content is already on disk byte-for-byte are skipped; the rest resolve one at a time through `npx skills@1.5.14 add <locator>`. The summary reports installed, skipped, and failed counts, and any member failure makes the whole command fail after attempting the rest.
+Before anything installs, the CLI checks all project sets for members pinned to conflicting refs. A conflict stops the install with exit code 4 (see the [FAQ](/faq/#what-happens-when-two-sets-want-the-same-skill)). Members are skipped when their locked content matches the installed bytes. The remaining members resolve one at a time through `npx skills@1.7.0 add <locator> --json`.
+
+The CLI captures the upstream output. In an interactive terminal, it shows up to five lines in a compact box. Press `e` during an install to show the full captured output. Non-interactive runs omit this box. The final summary gives the installed, skipped, and failed counts. The `Audit` section combines passed checks and missing findings. Each warning or issue stays attached to its skill.
 
 ### build
 
@@ -101,7 +103,7 @@ When a set has no lock, verify falls back to checking that every member is prese
 skill-set update <set>
 ```
 
-Prints the update plan (each locator and its skill) and the exact upstream invocation, then asks one confirmation before mutating; `--yes` and `--json` skip the prompt, `--dry-run` shows the plan and spawns nothing. Updates run through `npx skills@1.5.14 update <skills...> -p --yes`, then the set is re-locked if a lock existed and derived files regenerate. All members must be installed before anything updates.
+Prints the update plan (each locator and its skill) and the exact upstream invocation, then asks one confirmation before mutating; `--yes` and `--json` skip the prompt, `--dry-run` shows the plan and spawns nothing. Updates run through `npx skills@1.7.0 update <skills...> -p --yes`, then the set is re-locked if a lock existed and derived files regenerate. All members must be installed before anything updates.
 
 ### remove
 
@@ -151,6 +153,8 @@ With `--json`, every run — including crashes — emits exactly one JSON envelo
 ```
 
 `error.code` is a stable machine-readable code; `hint` and `data` appear when available.
+
+Successful `install` and `add` results include the structured upstream security fields for each installed skill. The `security` value can be `null`. Consumers do not need to parse terminal text.
 
 ## Exit codes
 

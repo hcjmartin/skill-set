@@ -62,15 +62,24 @@ function installs(
     }
     writeLock(cwd, after)
     if (opts?.skipFolders !== true) for (const skill of Object.keys(after)) addFolder(cwd, skill)
-    return { ok: true, data: { exitCode: 0, stdout: '', stderr: '' } }
+    const skillFlag = args.indexOf('--skill')
+    const name = skillFlag === -1 ? Object.keys(after)[0]! : args[skillFlag + 1]!
+    return {
+      ok: true,
+      data: { exitCode: 0, stdout: JSON.stringify([{ name, status: 'installed', security: null }]), stderr: '' },
+    }
   }
 }
 
 /** A runner that touches nothing — upstream's in-place update of an already-present skill. */
-function noopInstall(): CommandRunner {
+function noopInstall(name = 'find-skills'): CommandRunner {
   return async (_command, args) => ({
     ok: true,
-    data: { exitCode: 0, stdout: args.includes('--list') ? '◇ Found 1 skill\n' : '', stderr: '' },
+    data: {
+      exitCode: 0,
+      stdout: args.includes('--list') ? '◇ Found 1 skill\n' : JSON.stringify([{ name, status: 'installed', security: null }]),
+      stderr: '',
+    },
   })
 }
 
@@ -93,7 +102,7 @@ describe('resolveMember discovery', () => {
     if (result.ok) expect(result.data.skill).toBe('find-skills')
   })
 
-  it('tier 2: an unnamed reinstall resolves via a unique source match', async () => {
+  it('an unnamed reinstall resolves from the structured result', async () => {
     const cwd = project({
       'find-skills': entry('vercel-labs/agent-skills'),
       unrelated: entry('someone/else'),
@@ -103,38 +112,31 @@ describe('resolveMember discovery', () => {
     if (result.ok) expect(result.data.skill).toBe('find-skills')
   })
 
-  it('tier 2: a pinned ref narrows same-source entries to one', async () => {
+  it('a pinned ref keeps the matching structured result and lock metadata', async () => {
     const cwd = project({
       stable: entry('owner/repo', 'v1'),
       next: entry('owner/repo', 'v2'),
     })
-    const result = await resolveMember('owner/repo#v2', { cwd, runner: noopInstall() })
+    const result = await resolveMember('owner/repo#v2', { cwd, runner: noopInstall('next') })
     expect(result.ok, result.ok ? '' : result.error.message).toBe(true)
     if (!result.ok) return
     expect(result.data.skill).toBe('next')
     expect(result.data.ref).toBe('v2')
   })
 
-  it('tier 3: several same-source matches fail with the candidates listed', async () => {
+  it('uses the JSON result to disambiguate several same-source lock entries', async () => {
     const cwd = project({ alpha: entry('owner/repo'), beta: entry('owner/repo') })
-    const result = await resolveMember('owner/repo', { cwd, runner: noopInstall() })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.error.code).toBe(ErrorCodes.RESOLVE_AMBIGUOUS)
-    expect(result.error.message).toContain('alpha, beta')
-    expect(result.error.hint).toContain('"owner/repo@alpha"')
+    const result = await resolveMember('owner/repo', { cwd, runner: noopInstall('alpha') })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.skill).toBe('alpha')
   })
 
-  it('tier 3: zero matches fail with the factual message and a naming suggestion', async () => {
+  it('fails when the JSON result names a skill that is absent from the lock', async () => {
     const cwd = project({ unrelated: entry('someone/else') })
-    const result = await resolveMember('owner/repo', { cwd, runner: noopInstall() })
+    const result = await resolveMember('owner/repo', { cwd, runner: noopInstall('missing') })
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.error.code).toBe(ErrorCodes.RESOLVE_UNMATCHED)
-    expect(result.error.message).toBe(
-      'Member "owner/repo" was installed, but could not be matched to a skill in skills-lock.json.',
-    )
-    expect(result.error.hint).toContain('"owner/repo@<skill-name>"')
+    expect(result.error.code).toBe(ErrorCodes.RESOLVE_NO_LOCK_ENTRY)
   })
 
   it('a fresh install of several skills fails the one-skill rule before writing anything', async () => {
@@ -188,7 +190,7 @@ describe('resolveMember discovery', () => {
     const cwd = project()
     const runner: CommandRunner = async () => ({
       ok: true,
-      data: { exitCode: 7, stdout: '', stderr: '' },
+      data: { exitCode: 7, stdout: JSON.stringify([{ name: 'repo', status: 'failed', error: 'network error' }]), stderr: '' },
     })
     const result = await resolveMember('owner/repo', { cwd, runner })
     expect(result.ok).toBe(false)

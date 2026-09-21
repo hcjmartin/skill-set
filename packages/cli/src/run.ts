@@ -124,7 +124,7 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
     !json && (overrides.intro ?? (ui.interactive && overrides.stderr === undefined && process.stderr.isTTY === true))
   if (showIntro) {
     const wordmark = `${ui.accent('{')}${ui.style('bold', 'skill-set')}${ui.accent('}')}`
-    stderr.write(`${wordmark} ${ui.style('dim', `v${VERSION} — ${TAGLINE}`)}\n`)
+    stderr.write(`${wordmark} ${ui.style('dim', `v${VERSION} — ${TAGLINE}`)}\n\n`)
   }
 
   const ctx: CommandContext = {

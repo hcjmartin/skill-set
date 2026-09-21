@@ -70,7 +70,6 @@ export async function cmdShare(args: string[], ctx: CommandContext): Promise<Com
     cwd: ctx.cwd,
     runner: ctx.runner,
     extraArgs: ctx.passthrough,
-    capture: ctx.ui.json,
     label: `share ${JSON.stringify(name)}`,
     onStage: (_locator, invocation) => {
       ctx.ui.out(ctx.ui.style('dim', `staging: ${formatInvocation(invocation, ctx.passthrough)}`))

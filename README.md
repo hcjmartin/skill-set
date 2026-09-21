@@ -22,7 +22,7 @@ It takes many skills to do a task well — a skill-set makes grouping and sharin
 - **Locked to bytes** — an optional content-hash lock records exactly what each member resolved to.
 - **Verified in CI** — `verify --frozen` re-hashes every installed member and exits `3` on drift.
 
-The CLI wraps the [`skills`](https://github.com/vercel-labs/skills) CLI (pinned to an exact version, bumped deliberately) for resolving and installing individual skills.
+The CLI wraps the [`skills`](https://github.com/vercel-labs/skills) CLI to resolve and install individual skills. The exact upstream pin changes only during deliberate upgrades. skill-set captures the upstream JSON result and reports one clean install and security summary.
 
 ## Quickstart
 

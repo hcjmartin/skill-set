@@ -24,6 +24,7 @@ Resolution and installation of individual skills are delegated to the upstream [
 | [`verify`](#verify) | `verify [<set>] [--frozen]` | Verify installed content against each set lock (frozen: require the lock) |
 | [`update`](#update) | `update <set>` | Update members via the skills CLI, then re-lock |
 | [`remove`](#remove) | `remove <set>` | Remove a set definition, optionally remove skills not otherwise in use |
+| [`report`](#report) | `report [--last] [--title <t>] [--security]` | Prefill a GitHub issue for a CLI problem; sends nothing |
 
 ### init
 
@@ -112,6 +113,30 @@ skill-set remove <set>
 ```
 
 Prints the full removal plan up front (set artifacts, removable and kept skills, the upstream cleanup command) and collects both confirmations before anything mutates. Skills still referenced by another set are kept (reference-counted, including by shared source). Accepted skill cleanup is delegated to `npx skills remove` and runs before the set definition is deleted, so a failed cleanup leaves the set installed for a retry. Declining cleanup removes only the set definition (manifest, lock, generated page) and refreshes the index.
+
+### report
+
+```shellscript
+skill-set report [--last] [--title <t>] [--security]
+```
+
+Builds a prefilled [bug report](https://github.com/hcjmartin/skill-set/issues/new?template=bug_report.yml) for `hcjmartin/skill-set` and prints the redacted body for review. The CLI never sends anything itself: in an interactive terminal it asks before opening the issue form in your browser, and you file it under your own GitHub account. In CI, non-TTY runs, and `--json` it opens nothing and prints the URL.
+
+- `--last` fills in the most recent failure: the command's verb and our own flag names, the error code, exit code, message, and hint. Failures that look like a CLI bug (`ERR_SKILLSET_UNEXPECTED`, `ERR_SKILLSET_SPAWN_FAILED`, `ERR_SKILLSET_INSTALL_FAILED`) end with the line `To report this: skill-set report --last` in human output.
+- `--title` sets the issue title.
+- `--security` prints the private [security advisory](https://github.com/hcjmartin/skill-set/security/advisories/new) link instead. Never report a vulnerability in a public issue.
+
+**The last-error file.** Every failed run overwrites `$XDG_CACHE_HOME/skill-set/last-error.json` (default `~/.cache/skill-set/last-error.json`). It is redacted before it is written, and a write failure never affects the command. Delete it at any time.
+
+**Redaction.** The same rules apply to the cache file, the body, and the URL:
+
+- Your home directory becomes `~`, the working directory becomes `.`, and any other absolute path becomes `<path>`.
+- URLs keep only their scheme and host. Public `skill-sets.md/sets/<name>` paths are the exception.
+- Token-shaped values are masked: `ghp_`, `gho_`, `github_pat_`, `glpat-`, `xox[bap]-`, `sk-`, `Bearer …`, and `key=`, `token=`, `secret=`, `password=` values.
+- Environment values, manifest, lock, and skill contents, git remotes, and arguments after `--` are never included.
+- The body is capped at 4 KB and the encoded URL at 8,000 characters, marked `[truncated]`.
+
+**For agents.** `skill-set report --last --json` returns `{ url, title, body, repo, template, consentRequired: true }` in the usual envelope. Show the user the body and file only once they agree, either by giving them the `url` or with `gh issue create --repo hcjmartin/skill-set --title <title> --body <body>`.
 
 ## Global flags
 

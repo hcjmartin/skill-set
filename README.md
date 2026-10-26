@@ -69,6 +69,7 @@ Publish the manifest and lock anywhere HTTPS-reachable (`share` exports both), a
 | `verify [<set>] [--frozen]` | Verify installed content against each set lock (frozen: require the lock) |
 | `update <set>` | Update members via the skills CLI, then re-lock |
 | `remove <set>` | Remove a set definition, optionally remove skills not otherwise in use |
+| `report [--last] [--title <t>]` | Prefill a GitHub issue for a CLI problem; sends nothing |
 
 Every command takes `--json` (one machine-readable JSON object on stdout), `--yes`, and `--dry-run`. Exit codes: `0` ok · `1` error · `2` usage · `3` drift · `4` conflict.
 

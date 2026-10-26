@@ -20,6 +20,10 @@ const body = `# skill-set
 - [Manifest schema](https://skill-set.md/schema/draft/skill-set.schema.json): JSON Schema (draft-07) for a \`<name>.skill-set.json\` manifest.
 - [Set-lock schema](https://skill-set.md/schema/draft/skill-set.lock.schema.json): JSON Schema (draft-07) for the deterministic set-lock.
 
+## Reporting CLI problems
+
+- [skill-set report](https://skill-set.md/cli/#report): \`skill-set report --last --json\` returns a redacted, prefilled GitHub issue (\`url\`, \`title\`, \`body\`) with \`consentRequired: true\`. Show the user the body and file it only after they agree, via the URL or \`gh issue create --repo hcjmartin/skill-set\`.
+
 ## Source
 
 - [GitHub](https://github.com/hcjmartin/skill-set): Spec, reference CLI, and schemas.

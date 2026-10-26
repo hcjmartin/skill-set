@@ -146,7 +146,7 @@ Builds a prefilled [bug report](https://github.com/hcjmartin/skill-set/issues/ne
 | `--yes`, `-y` | Assume yes for prompts (required where a prompt would block CI) |
 | `--dry-run` | Print what would run or be written; change nothing, spawn nothing |
 | `--help`, `-h` | Show help |
-| `--version`, `-v` | Show the skill-set version and the pinned skills version |
+| `--version`, `-v` | Show the skill-set version (`skill-set/<version>`) |
 
 Arguments after `--` pass through to the skills CLI verbatim, for example:
 

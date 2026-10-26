@@ -2,12 +2,14 @@ import pkg from '../package.json' with { type: 'json' }
 import { ErrorCodes, SkillSetError, type Result, type SkillSetErrorCode } from './errors.ts'
 import { type CommandRunner } from './resolver.ts'
 import { createUi, type Writer } from './ui.ts'
+import { recordLastError } from './last-error.ts'
 import { cmdAdd } from './commands/add.ts'
 import { cmdBuild } from './commands/build.ts'
 import { cmdInit } from './commands/init.ts'
 import { cmdInstall } from './commands/install.ts'
 import { cmdLock } from './commands/lock.ts'
 import { cmdRemove } from './commands/remove.ts'
+import { cmdReport } from './commands/report.ts'
 import { cmdShare } from './commands/share.ts'
 import { cmdUpdate } from './commands/update.ts'
 import { cmdVerify } from './commands/verify.ts'
@@ -31,6 +33,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   verify: { usage: 'verify [<set>] [--frozen]', describe: 'Verify installed content against each set lock (frozen: require the lock)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
+  report: { usage: 'report [--last] [--title <t>]', describe: 'Prefill a GitHub issue for a CLI problem; sends nothing', handler: cmdReport },
 }
 
 const TAGLINE = 'define, share, and install named, versioned sets of agent skills'
@@ -74,7 +77,16 @@ export interface RunOverrides {
   promptAnswers?: string[]
   stdout?: Writer
   stderr?: Writer
+  opener?: (url: string) => Promise<boolean>
+  cacheDir?: string
 }
+
+// Failures likely to be our bug rather than the user's input get a pointer to `report`.
+const REPORTABLE_CODES: ReadonlySet<SkillSetErrorCode> = new Set([
+  ErrorCodes.UNEXPECTED,
+  ErrorCodes.SPAWN_FAILED,
+  ErrorCodes.INSTALL_FAILED,
+])
 
 export async function run(argv: readonly string[], overrides: RunOverrides = {}): Promise<number> {
   const stdout = overrides.stdout ?? process.stdout
@@ -135,6 +147,8 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
     ci: overrides.ci,
     passthrough,
     dryRun,
+    opener: overrides.opener,
+    cacheDir: overrides.cacheDir,
   }
 
   let result: CommandResult
@@ -160,6 +174,21 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
     }
   }
 
+  const exitCode = result.ok ? 0 : exitCodeFor(result.error.code)
+  // `report` failing must not overwrite the failure it is about to report.
+  if (!result.ok && verb !== 'report') {
+    recordLastError({
+      command: command === undefined ? null : verb!,
+      args: ours,
+      passthrough,
+      error: result.error,
+      exitCode,
+      cli: `skill-set/${VERSION}`,
+      cwd: ctx.cwd,
+      dir: overrides.cacheDir,
+    })
+  }
+
   if (json) {
     const envelope = result.ok
       ? { ok: true, command: verb, data: result.data }
@@ -177,8 +206,9 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
   } else if (!result.ok) {
     stderr.write(`${ui.style(['red', 'bold'], 'error')} ${result.error.message}\n`)
     if (result.error.hint !== undefined) stderr.write(`${ui.style('dim', result.error.hint)}\n`)
+    if (REPORTABLE_CODES.has(result.error.code)) stderr.write(`${ui.style('dim', 'To report this: skill-set report --last')}\n`)
   }
-  return result.ok ? 0 : exitCodeFor(result.error.code)
+  return exitCode
 }
 
 // The documented taxonomy: usage mistakes, lock drift, and cross-set conflicts are

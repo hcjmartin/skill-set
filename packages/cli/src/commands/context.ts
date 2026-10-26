@@ -17,6 +17,10 @@ export interface CommandContext {
   passthrough: readonly string[]
   /** Print what would run or be written, change nothing, spawn nothing. */
   dryRun: boolean
+  /** Injected browser opener for `report` tests; defaults to the platform opener. */
+  opener?: (url: string) => Promise<boolean>
+  /** Directory holding last-error.json; defaults to $XDG_CACHE_HOME/skill-set. */
+  cacheDir?: string
 }
 
 /** One-line rendering of an upstream invocation, for provenance labels and --dry-run. */

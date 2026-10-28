@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { redact, redactUrl, truncateBytes } from '../src/redact.ts'
 
 // Annotated vectors: [why, input, expected]. home=/home/ada, cwd=/home/ada/proj.
-const opts = { home: '/home/ada', cwd: '/home/ada/proj' }
+const opts = { home: '/home/ada', cwd: '/home/ada/proj', env: {} }
 
 const VECTORS: Array<[string, string, string]> = [
   // Paths
@@ -57,6 +57,13 @@ describe('redact — vectors', () => {
   it('scrubs args after -- wherever they appear', () => {
     expect(redact('npx skills add x --agent my-private-agent', { ...opts, secrets: ['my-private-agent'] })).toBe(
       'npx skills add x --agent <arg>',
+    )
+  })
+
+  it('replaces values of secret-named env vars, wherever they appear', () => {
+    const env = { DEPLOY_TOKEN: 'opaque-value-1234', DB_PASSWORD: 'correct horse', LANG: 'en_GB.UTF-8', API_KEY: 'short' }
+    expect(redact('auth failed with opaque-value-1234 for correct horse in en_GB.UTF-8, short', { ...opts, env })).toBe(
+      'auth failed with <env:DEPLOY_TOKEN> for <env:DB_PASSWORD> in en_GB.UTF-8, short',
     )
   })
 

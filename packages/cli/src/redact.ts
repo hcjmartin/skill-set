@@ -7,7 +7,13 @@ export interface RedactOptions {
   cwd?: string
   /** Values (e.g. args after `--`) that must never appear, replaced with `<arg>`. */
   secrets?: readonly string[]
+  /** Values of secret-named variables are replaced with `<env:NAME>`; defaults to process.env. */
+  env?: NodeJS.ProcessEnv
 }
+
+const SECRET_ENV_NAME = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE|SESSION/i
+// Shorter values (`1`, `true`, `dev`) would mangle ordinary text.
+const MIN_ENV_SECRET_LENGTH = 8
 
 // Same classes the skill-sets.md site logger scrubs; prefixes stay visible so a report still shows what leaked.
 const TOKEN_PATTERNS: ReadonlyArray<[RegExp, string]> = [
@@ -61,6 +67,7 @@ export function redact(text: string, opts: RedactOptions = {}): string {
   for (const secret of opts.secrets ?? []) {
     if (secret.length >= 2) out = out.split(secret).join('<arg>')
   }
+  for (const [name, value] of secretEnvEntries(opts.env ?? process.env)) out = out.split(value).join(`<env:${name}>`)
   for (const [pattern, replacement] of TOKEN_PATTERNS) out = out.replace(pattern, replacement)
 
   const kept: string[] = []
@@ -92,6 +99,15 @@ export function truncateBytes(text: string, maxBytes: number): string {
   // A split multi-byte character decodes as U+FFFD; drop it rather than ship a broken glyph.
   if (cut.endsWith('�')) cut = cut.slice(0, -1)
   return `${cut}${marker}`
+}
+
+function secretEnvEntries(env: NodeJS.ProcessEnv): Array<[string, string]> {
+  const entries: Array<[string, string]> = []
+  for (const [name, value] of Object.entries(env)) {
+    if (value !== undefined && value.length >= MIN_ENV_SECRET_LENGTH && SECRET_ENV_NAME.test(name)) entries.push([name, value])
+  }
+  // Longest first, so a value containing another is replaced whole.
+  return entries.sort((a, b) => b[1].length - a[1].length)
 }
 
 function trimSlash(path: string): string {

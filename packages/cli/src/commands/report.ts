@@ -97,11 +97,12 @@ export function buildReport(input: ReportInput): IssueReport {
 
 /** Hands the URL to the platform opener; resolves false when none could be started. */
 export function openInBrowser(url: string): Promise<boolean> {
+  // rundll32 takes the URL as-is; `cmd /c start` would re-parse its `&` and `%` and the quoted title.
   const [command, args] =
     process.platform === 'darwin'
       ? ['open', [url]]
       : process.platform === 'win32'
-        ? ['cmd', ['/c', 'start', '""', url.replace(/&/g, '^&')]]
+        ? ['rundll32', ['url.dll,FileProtocolHandler', url]]
         : ['xdg-open', [url]]
   return new Promise((resolve) => {
     try {

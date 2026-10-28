@@ -12,7 +12,7 @@ import {
   SECURITY_ADVISORY_URL,
   versionLine,
 } from '../src/commands/report.ts'
-import { cacheDir, flagNames, LAST_ERROR_FILE, readLastError, type LastError } from '../src/last-error.ts'
+import { cacheDir, flagNames, LAST_ERROR_FILE, typedFlagInput, readLastError, type LastError } from '../src/last-error.ts'
 import { SKILLS_PIN, type CommandRunner } from '../src/resolver.ts'
 import { run, VERSION, type RunOverrides } from '../src/run.ts'
 
@@ -144,6 +144,24 @@ describe('last-error cache', () => {
       '--json',
       '<flag>',
     ])
+  })
+
+  it('collects flag values and unknown flag names for scrubbing', () => {
+    expect(typedFlagInput(['share', '--output', 'out/x.json', '--hash=sha256:abc', '--my-private-flag', '-y', '--json'])).toEqual([
+      'out/x.json',
+      'sha256:abc',
+      '--my-private-flag',
+    ])
+  })
+
+  it('a rejected flag is not echoed into the cache by value or unknown name', async () => {
+    for (const [arg, typed] of [['--hash=private-value', 'private-value'], ['--private-flag-name', 'private-flag-name']]) {
+      const cache = tmp('skill-set-cache-')
+      await cli(['install', 'x', arg!], { cwd: tmp('skill-set-report-proj-'), cacheDir: cache })
+      const raw = readFileSync(join(cache, LAST_ERROR_FILE), 'utf8')
+      expect(raw).not.toContain(typed)
+      expect(raw).toContain('<arg>')
+    }
   })
 
   it('a failing run records a redacted envelope; the human hint line points at report', async () => {

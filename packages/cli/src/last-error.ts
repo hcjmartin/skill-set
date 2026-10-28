@@ -50,6 +50,24 @@ export function flagNames(args: readonly string[]): string[] {
   return names
 }
 
+// Flags whose value may be the next arg rather than `=value`.
+const VALUED_FLAGS: readonly string[] = ['--hash', '--manifest', '--output', '--title']
+
+/** What the user typed into flags (values, unknown flag names): scrubbed from messages like args after `--`. */
+export function typedFlagInput(args: readonly string[]): string[] {
+  const typed: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (!arg.startsWith('-') || arg === '-y') continue
+    const eq = arg.indexOf('=')
+    const name = eq === -1 ? arg : arg.slice(0, eq)
+    if (!KNOWN_FLAGS.includes(name)) typed.push(name)
+    if (eq !== -1) typed.push(arg.slice(eq + 1))
+    else if (VALUED_FLAGS.includes(name) && args[i + 1] !== undefined) typed.push(args[++i]!)
+  }
+  return typed
+}
+
 export interface RecordInput {
   command: string | null
   /** Args before the `--` sentinel. */
@@ -66,7 +84,7 @@ export interface RecordInput {
 /** Best-effort: a failed write must never change a command's outcome, so every error is swallowed. */
 export function recordLastError(input: RecordInput): void {
   try {
-    const opts = { cwd: input.cwd, secrets: input.passthrough }
+    const opts = { cwd: input.cwd, secrets: [...input.passthrough, ...typedFlagInput(input.args)] }
     const entry: LastError = {
       command: input.command,
       flags: flagNames(input.args),

@@ -135,7 +135,7 @@ Builds a prefilled [bug report](https://github.com/hcjmartin/skill-set/issues/ne
 - Token-shaped values are masked: `ghp_`, `gho_`, `github_pat_`, `glpat-`, `xox[bap]-`, `sk-`, `npm_`, AWS access key ids, JWTs, `Bearer …` and `Basic …`, and `key`, `token`, `secret`, `password` values written as `name=value`, `name: value`, or JSON fields.
 - Email addresses become `<email>`.
 - The value of any environment variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`, `COOKIE`, or `SESSION` becomes `<env:NAME>` wherever it appears.
-- Environment values, manifest, lock, and skill contents, git remotes, and arguments after `--` are never included.
+- Environment values, manifest, lock, and skill contents, git remotes, and arguments after `--` are never included. Flag values and unknown flag names you typed become `<arg>` in messages.
 - The body is capped at 4 KB and the encoded URL at 8,000 characters, marked `[truncated]`.
 
 **For agents.** `skill-set report --last --json` returns `{ url, title, body, repo, template, consentRequired: true }` in the usual envelope. Show the user the body and file only once they agree, either by giving them the `url` or with `gh issue create --repo hcjmartin/skill-set --title <title> --body <body>`.

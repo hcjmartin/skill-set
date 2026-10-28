@@ -132,7 +132,8 @@ Builds a prefilled [bug report](https://github.com/hcjmartin/skill-set/issues/ne
 
 - Your home directory becomes `~`, the working directory becomes `.`, and any other absolute path becomes `<path>`.
 - URLs keep only their scheme and host. Public `skill-sets.md/sets/<name>` paths are the exception.
-- Token-shaped values are masked: `ghp_`, `gho_`, `github_pat_`, `glpat-`, `xox[bap]-`, `sk-`, `Bearer …`, and `key=`, `token=`, `secret=`, `password=` values.
+- Token-shaped values are masked: `ghp_`, `gho_`, `github_pat_`, `glpat-`, `xox[bap]-`, `sk-`, `npm_`, AWS access key ids, JWTs, `Bearer …` and `Basic …`, and `key`, `token`, `secret`, `password` values written as `name=value`, `name: value`, or JSON fields.
+- Email addresses become `<email>`.
 - Environment values, manifest, lock, and skill contents, git remotes, and arguments after `--` are never included.
 - The body is capped at 4 KB and the encoded URL at 8,000 characters, marked `[truncated]`.
 

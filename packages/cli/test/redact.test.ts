@@ -23,6 +23,9 @@ const VECTORS: Array<[string, string, string]> = [
   ['lookalike hosts do not get the exception', 'https://skill-sets.md.evil.dev/sets/frontend', 'https://skill-sets.md.evil.dev'],
   ['trailing punctuation stays outside the URL', 'see https://example.com/a.', 'see https://example.com.'],
   ['scp-style git remotes are removed', 'remote git@github.com:acme/private.git failed', 'remote <remote> failed'],
+  // Emails
+  ['emails become <email>', 'commit author ada.l+ci@example.co.uk rejected', 'commit author <email> rejected'],
+  ['versioned package specs are not emails', 'npx skills@1.5.6 add @scope/pkg', 'npx skills@1.5.6 add @scope/pkg'],
   // Tokens
   ['ghp_ classic token', 'token ghp_abcdefghijklmnop1234', 'token ghp_***'],
   ['gho_ oauth token', 'gho_ABCDEF123456', 'gho_***'],
@@ -36,6 +39,13 @@ const VECTORS: Array<[string, string, string]> = [
   ['key= value', 'api_key=hunter2 next', 'api_key=*** next'],
   ['token= value', 'TOKEN=abc123', 'TOKEN=***'],
   ['secret= and password= values', 'secret=s3 password=p4', 'secret=*** password=***'],
+  ['npm_ token', 'NPM npm_abcdefghij1234567890', 'NPM npm_***'],
+  ['AWS access key id', 'key AKIAABCDEFGHIJKLMNOP used', 'key AKIA*** used'],
+  ['bare JWT', 'got eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig-123', 'got eyJ***'],
+  ['Basic auth header', 'Authorization: Basic YWRhOmh1bnRlcjI=', 'Authorization: Basic ***'],
+  ['JSON token field', '{"access_token": "abc def"}', '{"access_token": "***"}'],
+  ['header-style key', 'X-Api-Key: abc123def456', 'X-Api-Key: ***'],
+  ['short words after token: are kept', 'missing token: set it', 'missing token: set it'],
   ['tokens inside URLs are masked before the URL is cut', 'https://x.dev/?token=abc', 'https://x.dev'],
 ]
 

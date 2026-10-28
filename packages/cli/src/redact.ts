@@ -16,13 +16,22 @@ const TOKEN_PATTERNS: ReadonlyArray<[RegExp, string]> = [
   [/\bglpat-[A-Za-z0-9_-]+/g, 'glpat-***'],
   [/\b(xox[bap])-[A-Za-z0-9-]+/g, '$1-***'],
   [/\bsk-[A-Za-z0-9_-]{8,}/g, 'sk-***'],
+  [/\bnpm_[A-Za-z0-9]{8,}/g, 'npm_***'],
+  [/\b(AKIA|ASIA)[0-9A-Z]{16}\b/g, '$1***'],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***'],
+  [/\bBasic\s+[A-Za-z0-9+/]{8,}={0,2}/g, 'Basic ***'],
+  [/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, 'eyJ***'],
   [/\b([A-Za-z0-9_-]*(?:key|token|secret|password))=[^\s&"'`]+/gi, '$1=***'],
+  // JSON and header forms: "token": "abc", X-Api-Key: abc123def.
+  [/("[A-Za-z0-9_-]*(?:key|token|secret|password)"\s*:\s*)"[^"]*"/gi, '$1"***"'],
+  [/\b([A-Za-z0-9_-]*(?:key|token|secret|password):\s*)[A-Za-z0-9._~+/=-]{8,}/gi, '$1***'],
 ]
 
 const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>()[\]{}]+/gi
 // scp-style git remotes (git@host:owner/repo.git) never appear in a report.
 const SCP_REMOTE_PATTERN = /\b[\w.-]+@[\w.-]+:[\w./~-]+/g
+// Alphabetic TLD, so `skills@1.5.6` and `@scope/pkg` are left alone.
+const EMAIL_PATTERN = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g
 const PUBLIC_SET_PATH = /^\/sets\/([a-z0-9][a-z0-9-]*)(?:\/\1\.skill-set(?:\.lock)?\.json)?\/?$/
 const ABSOLUTE_PATH = /(^|[\s"'`(=,:[])(\/[^\s"'`)\],]+|[A-Za-z]:\\[^\s"'`)\],]*)/g
 
@@ -43,7 +52,7 @@ export function redactUrl(raw: string): string {
 
 /**
  * Scrubs free text for a public issue: tokens, URL paths/queries/credentials, git remotes,
- * and machine paths. Placeholders shield redacted URLs from the path pass.
+ * emails, and machine paths. Placeholders shield redacted URLs from the path pass.
  */
 export function redact(text: string, opts: RedactOptions = {}): string {
   const home = trimSlash(opts.home ?? homedir())
@@ -58,6 +67,7 @@ export function redact(text: string, opts: RedactOptions = {}): string {
   const shield = (value: string): string => `\uE000${kept.push(value) - 1}\uE000`
   out = out.replace(URL_PATTERN, (match) => shield(redactUrl(match)))
   out = out.replace(SCP_REMOTE_PATTERN, () => shield('<remote>'))
+  out = out.replace(EMAIL_PATTERN, () => shield('<email>'))
 
   // Longest prefix first, so a cwd inside home becomes `.` rather than `~/…`.
   const roots: Array<[string, string]> = [

@@ -33,7 +33,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   verify: { usage: 'verify [<set>] [--frozen]', describe: 'Verify installed content against each set lock (frozen: require the lock)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
-  report: { usage: 'report [--last] [--title <t>]', describe: 'Prefill a GitHub issue for a CLI problem; sends nothing', handler: cmdReport },
+  report: { usage: 'report [--last] [--title <t>] [--security]', describe: 'Prefill a GitHub issue for a CLI problem; sends nothing', handler: cmdReport },
 }
 
 const TAGLINE = 'define, share, and install named, versioned sets of agent skills'

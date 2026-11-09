@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ErrorCodes } from '../src/errors.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildConfig } from '../src/config.ts'
-import { buildAddInvocation, buildListInvocation, parseLocator, SKILLS_PIN } from '../src/resolver.ts'
+import {
+  buildAddInvocation,
+  buildListInvocation,
+  parseLocator,
+  SKILLS_BIN_ENV,
+  SKILLS_PIN,
+  skillsUpstream,
+  resolveMember,
+} from '../src/resolver.ts'
 
 // One row per source kind the upstream resolver accepts, plus grammar edges.
 const TABLE: Array<{
@@ -108,5 +120,79 @@ describe('buildListInvocation', () => {
       'owner/repo#v1.2.0',
       '--list',
     ])
+  })
+})
+
+describe('skillsUpstream', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+  /** A fake installed package: <tmp>/node_modules/<name>/{package.json,bin/cli.mjs}; returns the bin path. */
+  function vendored(manifest: Record<string, unknown> | null): string {
+    const root = mkdtempSync(join(tmpdir(), 'skills-vendored-'))
+    dirs.push(root)
+    const pkg = join(root, 'node_modules', 'skills')
+    mkdirSync(join(pkg, 'bin'), { recursive: true })
+    writeFileSync(join(pkg, 'bin', 'cli.mjs'), '')
+    if (manifest !== null) writeFileSync(join(pkg, 'package.json'), JSON.stringify(manifest))
+    return join(pkg, 'bin', 'cli.mjs')
+  }
+
+  it('defaults to npx with the pinned skills package and passes the check', () => {
+    expect(skillsUpstream.command({})).toEqual({ command: 'npx', prefix: ['-y', `skills@${SKILLS_PIN}`] })
+    expect(skillsUpstream.check({})).toEqual({ ok: true, data: undefined })
+  })
+
+  it(`runs the vendored entry named by ${SKILLS_BIN_ENV} with the current executable`, () => {
+    const bin = vendored({ name: 'skills', version: SKILLS_PIN })
+    vi.stubEnv(SKILLS_BIN_ENV, bin)
+    expect(skillsUpstream.command()).toEqual({ command: process.execPath, prefix: [bin] })
+    expect(skillsUpstream.check()).toEqual({ ok: true, data: undefined })
+    const inv = buildAddInvocation('owner/repo@x')
+    expect(inv.command).toBe(process.execPath)
+    expect(inv.args.slice(0, 3)).toEqual([bin, 'add', 'owner/repo'])
+    expect(inv.args).not.toContain(`skills@${SKILLS_PIN}`)
+  })
+
+  it(`treats a whitespace-only ${SKILLS_BIN_ENV} as unset`, () => {
+    vi.stubEnv(SKILLS_BIN_ENV, '   ')
+    expect(skillsUpstream.command()).toEqual({ command: 'npx', prefix: ['-y', `skills@${SKILLS_PIN}`] })
+    expect(buildAddInvocation('owner/repo@x').command).toBe('npx')
+  })
+
+  it('rejects an override whose package is a different version', () => {
+    vi.stubEnv(SKILLS_BIN_ENV, vendored({ name: 'skills', version: '0.0.1' }))
+    const result = skillsUpstream.check()
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe(ErrorCodes.UPSTREAM_MISMATCH)
+    expect(result.error.message).toContain('skills@0.0.1')
+    expect(result.error.message).toContain(`skills@${SKILLS_PIN}`)
+  })
+
+  it('rejects an override whose package is not skills', () => {
+    vi.stubEnv(SKILLS_BIN_ENV, vendored({ name: 'not-skills', version: SKILLS_PIN }))
+    expect(skillsUpstream.check()).toMatchObject({ ok: false, error: { code: ErrorCodes.UPSTREAM_MISMATCH } })
+  })
+
+  it('rejects an override with no package.json above it', () => {
+    const bin = vendored(null)
+    vi.stubEnv(SKILLS_BIN_ENV, bin)
+    const result = skillsUpstream.check()
+    expect(result).toMatchObject({ ok: false, error: { code: ErrorCodes.UPSTREAM_MISMATCH } })
+    if (result.ok) return
+    expect(result.error.message).toContain('no package.json')
+  })
+
+  it('fails the resolve before any spawn when the override is wrong', async () => {
+    vi.stubEnv(SKILLS_BIN_ENV, vendored({ name: 'skills', version: '0.0.1' }))
+    const cwd = mkdtempSync(join(tmpdir(), 'skills-cwd-'))
+    dirs.push(cwd)
+    const runner = vi.fn()
+    const result = await resolveMember('owner/repo@x', { cwd, runner })
+    expect(result).toMatchObject({ ok: false, error: { code: ErrorCodes.UPSTREAM_MISMATCH } })
+    expect(runner).not.toHaveBeenCalled()
   })
 })

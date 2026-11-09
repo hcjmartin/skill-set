@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_DIRECTORY, expandAddSource } from '../src/commands/add.ts'
 import { INDEX_FILENAME } from '../src/generate.ts'
 import { setHash } from '../src/hash.ts'
 import { createSetLock, parseSetLock, serializeSetLock } from '../src/lock.ts'
 import { SETS_DIR } from '../src/project.ts'
-import { SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
+import { SKILLS_BIN_ENV, SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
 import { run, type RunOverrides } from '../src/run.ts'
 import type { Writer } from '../src/ui.ts'
 
@@ -1813,5 +1813,47 @@ describe('reserved skill name — the set-definitions directory is never a skill
     expect(code).toBe(0)
     expect(existsSync(join(cwd, SKILLS_DIR, 'skill-set', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(cwd, SETS_DIR, 'tooling', 'tooling.skill-set.json'))).toBe(true)
+  })
+})
+
+describe('upstream override', () => {
+  afterEach(() => vi.unstubAllEnvs())
+  const url = 'https://skill-set.md/ovr.skill-set.json'
+  const manifest = `${JSON.stringify({ name: 'ovr', version: '1.0.0', skills: ['hcjmartin/alpha-repo@alpha'] })}\n`
+  const fetcher = async (u: string) =>
+    u === url ? { ok: true as const, data: manifest } : { ok: false as const, error: new Error('unexpected url') as never }
+  /** A vendored `skills` package at the wrong version, as an embedder misconfiguration would present it. */
+  function wrongVendoredBin(): string {
+    const root = project()
+    const pkg = join(root, 'node_modules', 'skills')
+    mkdirSync(join(pkg, 'bin'), { recursive: true })
+    writeFileSync(join(pkg, 'bin', 'cli.mjs'), '')
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'skills', version: '0.0.1' }))
+    return join(pkg, 'bin', 'cli.mjs')
+  }
+
+  it('add fails before fetching, writing or spawning when the override is wrong', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    vi.stubEnv(SKILLS_BIN_ENV, wrongVendoredBin())
+    const { code, out } = await cli(cwd, fake, ['add', url, '--yes', '--json'], { fetcher })
+    expect(code).toBe(1)
+    const envelope = JSON.parse(out) as { ok: boolean; error: { code: string; message: string } }
+    expect(envelope.error.code).toBe('ERR_SKILLSET_UPSTREAM_MISMATCH')
+    expect(envelope.error.message).toContain('skills@0.0.1')
+    expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
+    expect(fake.calls).toEqual([])
+  })
+
+  it('install fails before any spawn when the override is wrong', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'ovr', 'hcjmartin/alpha-repo@alpha'])
+    const spawnsBefore = fake.calls.length
+    vi.stubEnv(SKILLS_BIN_ENV, wrongVendoredBin())
+    const { code, out } = await cli(cwd, fake, ['install', 'ovr', '--json'])
+    expect(code).toBe(1)
+    expect((JSON.parse(out) as { error: { code: string } }).error.code).toBe('ERR_SKILLSET_UPSTREAM_MISMATCH')
+    expect(fake.calls.length).toBe(spawnsBefore)
   })
 })

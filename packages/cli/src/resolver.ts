@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { buildConfig } from './config.ts'
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
 import { specFolderHash } from './hash.ts'
@@ -15,6 +15,14 @@ import {
 
 /** Upstream pin, exact: every bump is deliberate (the weekly compat job watches upstream drift). */
 export const SKILLS_PIN = '1.7.0'
+
+/**
+ * Embedder override for the `skills` upstream: a path to its `bin/cli.mjs` at the SAME pinned
+ * version, run with the current executable instead of `npx -y skills@<pin>`. The target's nearest
+ * package.json is checked against the pin before any spawn. Convention for further upstreams:
+ * `SKILL_SET_UPSTREAM_<NAME>_BIN`.
+ */
+export const SKILLS_BIN_ENV = 'SKILL_SET_UPSTREAM_SKILLS_BIN'
 
 /** Where resolved skills land, relative to the project root (spec §4; upstream UNIVERSAL_SKILLS_DIR). */
 export const SKILLS_DIR = '.agents/skills'
@@ -71,42 +79,115 @@ export interface SkillsInvocation {
   env: Record<string, string>
 }
 
+/**
+ * One upstream installer the resolver can delegate to. There is exactly one today; a second
+ * implements this shape, registers its own bin override, and is selected per member locator
+ * (open design question in the installer-app plan).
+ */
+export interface UpstreamSpec {
+  readonly name: string
+  readonly pin: string
+  /** Env var naming a vendored entry script to run instead of the default launch. */
+  readonly binEnv: string
+  /** How to launch it: `npx -y <name>@<pin>` by default, or the vendored entry under the current executable. */
+  command(env?: NodeJS.ProcessEnv): { command: string; prefix: string[] }
+  /** Confirms an override points at the pinned upstream. A configuration check, not a tamper check. */
+  check(env?: NodeJS.ProcessEnv): Result<void>
+}
+
+export const skillsUpstream: UpstreamSpec = {
+  name: 'skills',
+  pin: SKILLS_PIN,
+  binEnv: SKILLS_BIN_ENV,
+  command(env = process.env) {
+    const bin = overrideBin(env)
+    // process.execPath, not 'node': an Electron-as-Node host's children inherit ELECTRON_RUN_AS_NODE.
+    if (bin !== undefined) return { command: process.execPath, prefix: [bin] }
+    return { command: 'npx', prefix: ['-y', `skills@${SKILLS_PIN}`] }
+  },
+  check(env = process.env) {
+    const bin = overrideBin(env)
+    if (bin === undefined) return { ok: true, data: undefined }
+    const manifest = nearestPackageManifest(bin)
+    if (manifest === undefined) {
+      return fail(ErrorCodes.UPSTREAM_MISMATCH, `${SKILLS_BIN_ENV} points at ${bin}, but no package.json was found above it`, {
+        hint: `Set it to the bin/cli.mjs inside an installed skills@${SKILLS_PIN} package, or unset it to use npx.`,
+        data: { bin },
+      })
+    }
+    if (manifest.name !== 'skills' || manifest.version !== SKILLS_PIN) {
+      return fail(
+        ErrorCodes.UPSTREAM_MISMATCH,
+        `${SKILLS_BIN_ENV} points at ${String(manifest.name)}@${String(manifest.version)}; this CLI pins skills@${SKILLS_PIN}`,
+        {
+          hint: 'Vendor the same version the CLI pins, or unset the variable to use npx.',
+          data: { bin, manifest: manifest.path, found: { name: manifest.name, version: manifest.version }, expected: `skills@${SKILLS_PIN}` },
+        },
+      )
+    }
+    return { ok: true, data: undefined }
+  },
+}
+
+function overrideBin(env: NodeJS.ProcessEnv): string | undefined {
+  const bin = env[SKILLS_BIN_ENV]?.trim()
+  return bin === undefined || bin === '' ? undefined : bin
+}
+
+/** The package.json governing a file: the first one found walking up from its folder. */
+function nearestPackageManifest(file: string): { path: string; name: unknown; version: unknown } | undefined {
+  let dir = dirname(resolve(file))
+  for (;;) {
+    const candidate = join(dir, 'package.json')
+    if (existsSync(candidate)) {
+      try {
+        const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: unknown; version?: unknown }
+        return { path: candidate, name: parsed.name, version: parsed.version }
+      } catch {
+        return { path: candidate, name: undefined, version: undefined }
+      }
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
 /** Builds the pinned upstream invocation for one member: explicit args + prompt suppression, always. */
 export function buildAddInvocation(locator: string, opts?: { global?: boolean }): SkillsInvocation {
   const { source, skill, ref } = parseLocator(locator)
   const sourceArg = ref === undefined ? source : `${source}#${ref}`
-  const args = ['-y', `skills@${SKILLS_PIN}`, 'add', sourceArg]
+  const args = ['add', sourceArg]
   if (skill !== undefined) args.push('--skill', skill)
   args.push('--yes', '--json')
   if (opts?.global === true) args.push('--global')
-  // Preserves the repository's upstream telemetry opt-out. In skills@1.7.0 the same
-  // opt-out also suppresses advisory audits, which the result reports as security: null.
-  const env: Record<string, string> = {}
-  if (buildConfig.suppressUpstreamTelemetry) env.DISABLE_TELEMETRY = '1'
-  return { command: 'npx', args, env }
+  return withTelemetryOptOut(args)
 }
 
 /** Builds the pinned upstream no-write discovery invocation for an unnamed member. */
 export function buildListInvocation(locator: string): SkillsInvocation {
   const { source, ref } = parseLocator(locator)
   const sourceArg = ref === undefined ? source : `${source}#${ref}`
-  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'add', sourceArg, '--list'])
+  return withTelemetryOptOut(['add', sourceArg, '--list'])
 }
 
 /** Builds the pinned upstream update invocation for installed skills (project scope, prompt-suppressed). */
 export function buildUpdateInvocation(skills: readonly string[]): SkillsInvocation {
-  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'update', ...skills, '-p', '--yes'])
+  return withTelemetryOptOut(['update', ...skills, '-p', '--yes'])
 }
 
 /** Builds the pinned upstream remove invocation (project scope, prompt-suppressed). */
 export function buildRemoveInvocation(skills: readonly string[]): SkillsInvocation {
-  return withTelemetryOptOut(['-y', `skills@${SKILLS_PIN}`, 'remove', ...skills, '--yes'])
+  return withTelemetryOptOut(['remove', ...skills, '--yes'])
 }
 
 function withTelemetryOptOut(args: string[]): SkillsInvocation {
+  // Preserves the repository's upstream telemetry opt-out. In skills@1.7.0 the same
+  // opt-out also suppresses advisory audits, which the result reports as security: null.
   const env: Record<string, string> = {}
   if (buildConfig.suppressUpstreamTelemetry) env.DISABLE_TELEMETRY = '1'
-  return { command: 'npx', args, env }
+  const { command, prefix } = skillsUpstream.command()
+  return { command, args: [...prefix, ...args], env }
 }
 
 /** Members whose locator explicitly names the reserved skill; installers refuse these before any fetch or spawn. */
@@ -269,6 +350,18 @@ export type CommandRunner = (
   opts?: SpawnOptions,
 ) => Promise<Result<SpawnOutcome>>
 
+/** Every upstream spawn goes through here: the override target is checked, then the pinned CLI runs. */
+export async function runUpstream(
+  invocation: SkillsInvocation,
+  opts: { cwd: string; runner?: CommandRunner | undefined; extraArgs?: readonly string[] | undefined; capture: boolean },
+): Promise<Result<SpawnOutcome>> {
+  const target = skillsUpstream.check()
+  if (!target.ok) return target
+  const args =
+    opts.extraArgs === undefined || opts.extraArgs.length === 0 ? invocation.args : [...invocation.args, ...opts.extraArgs]
+  return (opts.runner ?? runCommand)(invocation.command, args, { cwd: opts.cwd, env: invocation.env, capture: opts.capture })
+}
+
 export interface Resolver {
   resolve(locator: string, opts: { cwd: string }): Promise<Result<ResolvedMember>>
 }
@@ -313,15 +406,7 @@ export async function resolveMember(
   const guard = snapshotSetsDir(opts.cwd)
 
   const invocation = buildAddInvocation(locator)
-  const args =
-    opts.extraArgs === undefined || opts.extraArgs.length === 0
-      ? invocation.args
-      : [...invocation.args, ...opts.extraArgs]
-  const run = await (opts.runner ?? runCommand)(invocation.command, args, {
-    cwd: opts.cwd,
-    env: invocation.env,
-    capture: true,
-  })
+  const run = await runUpstream(invocation, { cwd: opts.cwd, runner: opts.runner, extraArgs: opts.extraArgs, capture: true })
   if (restoreSetsDir(opts.cwd, guard)) opts.onSetsDirRestored?.()
   if (!run.ok) return run
   opts.onUpstreamOutput?.(run.data.stderr)
@@ -400,16 +485,8 @@ async function probeMemberCount(
   },
 ): Promise<Result<number>> {
   const invocation = buildListInvocation(locator)
-  const args =
-    opts.extraArgs === undefined || opts.extraArgs.length === 0
-      ? invocation.args
-      : [...invocation.args, ...opts.extraArgs]
   const guard = snapshotSetsDir(opts.cwd)
-  const run = await (opts.runner ?? runCommand)(invocation.command, args, {
-    cwd: opts.cwd,
-    env: invocation.env,
-    capture: true,
-  })
+  const run = await runUpstream(invocation, { cwd: opts.cwd, runner: opts.runner, extraArgs: opts.extraArgs, capture: true })
   if (restoreSetsDir(opts.cwd, guard)) opts.onSetsDirRestored?.()
   if (!run.ok) return run
   if (run.data.exitCode !== 0) {

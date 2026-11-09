@@ -4,7 +4,7 @@ import { ErrorCodes, SkillSetError, type Result } from '../errors.ts'
 import { createSetLock, LOCK_SUFFIX, parseSetLock, serializeSetLock, type SetLock } from '../lock.ts'
 import { MANIFEST_SUFFIX, NAME_PATTERN, parseManifest, type Manifest } from '../manifest.ts'
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
-import { parseLocator, reservedMembers, reservedNameError, SKILLS_DIR } from '../resolver.ts'
+import { parseLocator, reservedMembers, reservedNameError, SKILLS_DIR, skillsUpstream } from '../resolver.ts'
 import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers } from '../staging.ts'
 import { installSet } from './install.ts'
 import { lockSet } from './lock.ts'
@@ -119,6 +119,10 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const pin = resolvePinnedHash(expanded, split.data.values.get('--hash'))
   if (!pin.ok) return pin
   const { source, hash } = pin.data
+
+  // A misconfigured upstream override fails here, before any fetch or write.
+  const upstream = skillsUpstream.check()
+  if (!upstream.ok) return upstream
 
   ctx.ui.out(`Adding skill-set from ${source}...`)
   if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', 'content will be verified against the provided sha256 hash'))

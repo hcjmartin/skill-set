@@ -13,6 +13,8 @@ The `skill-set` CLI installs a set's declared skills and verifies the installed 
 
 **Status:** the [format spec](spec/draft/README.md) is a draft and the CLI is pre-1.0; minor versions may still include breaking changes until 1.0.
 
+Building on top of the CLI? Developer notes live in [`docs/`](docs), starting with [embedding the CLI in your app](docs/embedding.md).
+
 ## Why skill-sets?
 
 It takes many skills to do a task well — a skill-set makes grouping and sharing them a first-class, verifiable artifact:

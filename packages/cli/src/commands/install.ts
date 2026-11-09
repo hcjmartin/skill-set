@@ -12,6 +12,7 @@ import {
   resolveMember,
   SETS_DIR_RESTORED_NOTICE,
   SKILLS_DIR,
+  skillsUpstream,
 } from '../resolver.ts'
 import type { UpstreamSecurity } from '../upstream-add.ts'
 import { renderSecuritySummary, renderUpstreamPanel, watchForUpstreamExpansion } from '../upstream-output.ts'
@@ -35,6 +36,9 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
   // Members explicitly naming the reserved skill are refused before any spawn.
   const reserved = reservedMembers(manifest.data.skills)
   if (reserved.length > 0) return { ok: false, error: reservedNameError(reserved) }
+
+  const upstream = skillsUpstream.check()
+  if (!upstream.ok) return upstream
 
   ctx.ui.out(`Installing local skill-set ${JSON.stringify(name)}...`)
 

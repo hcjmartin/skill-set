@@ -6,13 +6,13 @@ import { MANIFEST_SUFFIX } from '../manifest.ts'
 import { listSetNames, loadManifest, readSetSource, SETS_DIR, setPaths, writeIndex } from '../project.ts'
 import {
   buildRemoveInvocation,
+  runUpstream,
   locateMember,
   parseLocator,
   restoreSetsDir,
   SETS_DIR_RESTORED_NOTICE,
   snapshotSetsDir,
 } from '../resolver.ts'
-import { runCommand } from '../spawn.ts'
 import { formatInvocation, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
 
 export const REMOVE_USAGE = 'skill-set remove <set>'
@@ -71,14 +71,9 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
     // set definition needed to understand and retry the operation.
     const invocation = buildRemoveInvocation(removable)
     ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
-    const invocationArgs = ctx.passthrough.length === 0 ? invocation.args : [...invocation.args, ...ctx.passthrough]
     // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.
     const guard = snapshotSetsDir(ctx.cwd)
-    const run = await (ctx.runner ?? runCommand)(invocation.command, invocationArgs, {
-      cwd: ctx.cwd,
-      env: invocation.env,
-      capture: ctx.ui.json,
-    })
+    const run = await runUpstream(invocation, { cwd: ctx.cwd, runner: ctx.runner, extraArgs: ctx.passthrough, capture: ctx.ui.json })
     if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
     if (!run.ok) {
       return {

@@ -1918,8 +1918,8 @@ describe('--progress events', () => {
       { event: 'upstream:output', locator: gamma, text: `${upstreamText}\nInstalled gamma` },
       { event: 'member:done', locator: gamma, skill: 'gamma', computedHash: hashes[gamma] },
       { event: 'verify:start' },
-      { event: 'lock:written', path: `${SETS_DIR}/duo/duo.skill-set.lock.json` },
       { event: 'verify:done', verifiedAgainst: 'sidecar' },
+      { event: 'lock:written', path: `${SETS_DIR}/duo/duo.skill-set.lock.json` },
       { event: 'pages:built' },
       { event: 'done', ok: true },
     ])

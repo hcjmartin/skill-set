@@ -272,6 +272,8 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     detail = { verification: outcome.data.detail }
   }
   ctx.ui.progress({ event: 'verify:done', verifiedAgainst: verified })
+  // The lock lands during verification, but a consumer reads 'verify:done' as the gate before anything is kept.
+  if (verified !== null) ctx.ui.progress({ event: 'lock:written', path: `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}` })
 
   const lock = loadLockIfPresent(ctx.cwd, name)
   if (!lock.ok) return lock
@@ -374,7 +376,6 @@ async function verifyReceipt(
     writeFileSync(paths.lock, serializeSetLock(finalLock))
     ctx.ui.out(`${ctx.ui.style('green', '✓')} Verified: set hash matches the pinned sha256 — wrote ${lockPath}`)
   }
-  ctx.ui.progress({ event: 'lock:written', path: lockPath })
   return {
     ok: true,
     data: {

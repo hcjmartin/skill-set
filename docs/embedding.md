@@ -54,3 +54,63 @@ Notes for consumers:
 - New events and new fields may be added within `v: 1`; ignore what you do not recognise.
 
 The event union is defined as a zod schema, `progressEventSchema`, in [`packages/cli/src/progress.ts`](../packages/cli/src/progress.ts).
+
+## Dry-run payload
+
+`skill-set add <source> --dry-run --json` fetches and validates the manifest, then stops: nothing is written, no skill is installed and the author lock is not fetched. The `data` of the result describes what a real `add` would do:
+
+```json
+{
+  "name": "my-set",
+  "version": "1.0.0",
+  "description": "Skills for reviewing pull requests.",
+  "author": { "name": "Ada Example", "url": "https://example.com/ada" },
+  "homepage": "https://example.com/my-set",
+  "dryRun": true,
+  "wouldInstall": ["owner/repo@alpha", "owner/tools#v1.2.0"],
+  "members": [
+    { "locator": "owner/repo@alpha", "source": "owner/repo", "skill": "alpha" },
+    { "locator": "owner/tools#v1.2.0", "source": "owner/tools", "ref": "v1.2.0" }
+  ],
+  "wouldVerify": { "hash": "3f5a…", "authorLock": "https://skill-sets.md/sets/my-set/my-set.skill-set.lock.json" },
+  "verification": { "hash": "3f5a…", "authorLock": "https://skill-sets.md/sets/my-set/my-set.skill-set.lock.json", "plan": "both" },
+  "trust": { "state": "allowlisted", "host": "skill-sets.md" }
+}
+```
+
+| Field | Present | Meaning |
+| --- | --- | --- |
+| `name`, `version` | always | from the manifest |
+| `description`, `author`, `homepage` | when the manifest has them | from the manifest; `author` is `{ name, url?, organization?, uri? }` |
+| `dryRun` | always | `true` |
+| `wouldInstall` | always | the member locators, in manifest order |
+| `members` | always | each locator split into `source`, `skill` (when it names one) and `ref` (when it pins one), in manifest order |
+| `verification` | always | `plan` plus the `hash` and `authorLock` it refers to |
+| `wouldVerify` | unless `plan` is `none` | the same `hash` and `authorLock`, kept for older consumers |
+| `trust` | always | how the manifest source is trusted |
+
+`verification.plan` is what a real `add` would verify the installed content against:
+
+| `plan` | Meaning |
+| --- | --- |
+| `hash` | the pinned sha256 (`--hash` or a `#sha256=` fragment) |
+| `sidecar` | the author lock at `authorLock`, if one is published there |
+| `both` | the pinned hash and, if published, the author lock |
+| `none` | nothing: no pin, and the source has no author lock location |
+
+`trust.state` describes the manifest source:
+
+| `state` | Meaning |
+| --- | --- |
+| `allowlisted` | `host` is a recognised skill-set provider |
+| `confirmed` | `host` is not recognised and the user accepted it, at the prompt or with `--yes` |
+| `local` | the source is a filesystem path; there is no `host` |
+
+`trust.owner` is set only for a GitHub host (`github.com`, `raw.githubusercontent.com`, `gist.githubusercontent.com`) and is the first path segment of the URL.
+
+Notes for consumers:
+
+- The manifest is untrusted remote text. Escape `description`, `author`, `homepage` and the member fields before showing them.
+- A dry run does not fetch the author lock, so `sidecar` and `both` say where the lock is looked for, not that one exists. The real `add` reports the outcome as `verified` in its result and as `verify:done.verifiedAgainst` in the progress stream.
+- An unrecognised host needs confirmation before anything is fetched. Under `--json` without `--yes`, the command fails with `ERR_SKILLSET_CONFIRM_REQUIRED` and `error.data.host` names the host; re-run with `--yes` once the user accepts it.
+- New fields may be added; ignore what you do not recognise.

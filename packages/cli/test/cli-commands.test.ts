@@ -2039,3 +2039,145 @@ describe('--progress events', () => {
     expect(fake.calls.at(-1)).toContain('--progress')
   })
 })
+
+describe('add --dry-run --json payload', () => {
+  const HASH = 'a'.repeat(64)
+
+  interface DryRunData {
+    members: Array<{ locator: string; source: string; skill?: string; ref?: string }>
+    verification: { hash?: string; authorLock?: string; plan: string }
+    trust: { state: string; host?: string; owner?: string }
+  }
+
+  // Tracks every fetch, so a dry run can be shown to read the manifest and nothing else.
+  async function dryRun(
+    source: string,
+    manifest: Record<string, unknown> | undefined,
+    flags: string[] = [],
+  ): Promise<{ code: number; envelope: { ok: boolean; data: DryRunData & Record<string, unknown>; error?: { code: string; data: unknown } }; fetched: string[] }> {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return manifest === undefined
+        ? { ok: false as const, error: new Error('unexpected url') as never }
+        : { ok: true as const, data: JSON.stringify(manifest) }
+    }
+    const { code, out } = await cli(cwd, fake, ['add', source, '--dry-run', '--json', ...flags], { fetcher })
+    expect(fake.calls).toHaveLength(0)
+    expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
+    return { code, envelope: JSON.parse(out) as never, fetched }
+  }
+
+  function localManifest(filename: string, manifest: Record<string, unknown>): string {
+    const path = join(project(), filename)
+    writeFileSync(path, JSON.stringify(manifest))
+    return path
+  }
+
+  const minimal = { name: 'bare', version: '0.1.0', skills: ['hcjmartin/gamma-repo@gamma'] }
+
+  it('returns the full payload for a manifest with every optional field', async () => {
+    const url = 'https://skill-set.md/full.skill-set.json'
+    const author = { name: 'Harry Martin', url: 'https://example.com/harry', organization: 'Flocker', uri: 'https://example.com/id' }
+    const skills = ['hcjmartin/gamma-repo@gamma', 'hcjmartin/tools#v1.2.0', 'hcjmartin/mono@delta#main', 'hcjmartin/solo']
+    const { code, envelope, fetched } = await dryRun(
+      url,
+      { name: 'full', version: '2.3.4', description: 'Everything set.', author, homepage: 'https://example.com/full', skills },
+      ['--hash', `sha256:${HASH}`],
+    )
+    expect(code).toBe(0)
+    expect(fetched).toEqual([url])
+    expect(envelope.data).toEqual({
+      name: 'full',
+      version: '2.3.4',
+      description: 'Everything set.',
+      author,
+      homepage: 'https://example.com/full',
+      dryRun: true,
+      wouldInstall: skills,
+      members: [
+        { locator: 'hcjmartin/gamma-repo@gamma', source: 'hcjmartin/gamma-repo', skill: 'gamma' },
+        { locator: 'hcjmartin/tools#v1.2.0', source: 'hcjmartin/tools', ref: 'v1.2.0' },
+        { locator: 'hcjmartin/mono@delta#main', source: 'hcjmartin/mono', skill: 'delta', ref: 'main' },
+        { locator: 'hcjmartin/solo', source: 'hcjmartin/solo' },
+      ],
+      wouldVerify: { hash: HASH, authorLock: 'https://skill-set.md/full.skill-set.lock.json' },
+      verification: { hash: HASH, authorLock: 'https://skill-set.md/full.skill-set.lock.json', plan: 'both' },
+      trust: { state: 'allowlisted', host: 'skill-set.md' },
+    })
+  })
+
+  it('omits absent optional fields; plan is "sidecar" without a pinned hash', async () => {
+    const url = 'https://skill-set.md/bare.skill-set.json'
+    const { code, envelope } = await dryRun(url, minimal)
+    expect(code).toBe(0)
+    expect(envelope.data).toEqual({
+      name: 'bare',
+      version: '0.1.0',
+      dryRun: true,
+      wouldInstall: minimal.skills,
+      members: [{ locator: 'hcjmartin/gamma-repo@gamma', source: 'hcjmartin/gamma-repo', skill: 'gamma' }],
+      wouldVerify: { authorLock: 'https://skill-set.md/bare.skill-set.lock.json' },
+      verification: { authorLock: 'https://skill-set.md/bare.skill-set.lock.json', plan: 'sidecar' },
+      trust: { state: 'allowlisted', host: 'skill-set.md' },
+    })
+  })
+
+  it('a local path is trust "local", with plan "none" or "hash" when no author lock location exists', async () => {
+    // No .skill-set.json suffix, so there is no sibling lock location to derive.
+    const path = localManifest('manifest.json', minimal)
+    const none = await dryRun(path, undefined)
+    expect(none.code).toBe(0)
+    expect(none.fetched).toEqual([])
+    expect(none.envelope.data.trust).toEqual({ state: 'local' })
+    expect(none.envelope.data.verification).toEqual({ plan: 'none' })
+    expect('wouldVerify' in none.envelope.data).toBe(false)
+
+    const pinned = await dryRun(path, undefined, ['--hash', `sha256:${HASH}`])
+    expect(pinned.envelope.data.verification).toEqual({ hash: HASH, plan: 'hash' })
+    expect(pinned.envelope.data.wouldVerify).toEqual({ hash: HASH })
+
+    const sibling = localManifest('bare.skill-set.json', minimal)
+    const local = await dryRun(sibling, undefined)
+    expect(local.envelope.data.trust).toEqual({ state: 'local' })
+    expect(local.envelope.data.verification).toEqual({
+      authorLock: `${sibling.slice(0, -'.skill-set.json'.length)}.skill-set.lock.json`,
+      plan: 'sidecar',
+    })
+  })
+
+  it('reports an unrecognised host accepted with --yes as "confirmed"', async () => {
+    const url = 'https://unknown-origin.invalid/bare.skill-set.json'
+    const { code, envelope, fetched } = await dryRun(url, minimal, ['--yes'])
+    expect(code).toBe(0)
+    expect(fetched).toEqual([url])
+    expect(envelope.data.trust).toEqual({ state: 'confirmed', host: 'unknown-origin.invalid' })
+  })
+
+  it('names the owner of a GitHub-hosted manifest', async () => {
+    const url = 'https://raw.githubusercontent.com/hcjmartin/sets/main/bare.skill-set.json'
+    const { code, envelope } = await dryRun(url, minimal, ['--yes'])
+    expect(code).toBe(0)
+    expect(envelope.data.trust).toEqual({ state: 'confirmed', host: 'raw.githubusercontent.com', owner: 'hcjmartin' })
+  })
+
+  it('still refuses an unrecognised host without --yes before fetching, now naming the host', async () => {
+    const { code, envelope, fetched } = await dryRun('https://unknown-origin.invalid/bare.skill-set.json', minimal)
+    expect(code).toBe(2)
+    expect(fetched).toEqual([])
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error).toMatchObject({
+      code: 'ERR_SKILLSET_CONFIRM_REQUIRED',
+      data: { host: 'unknown-origin.invalid', question: expect.stringContaining('unknown-origin.invalid') as string },
+    })
+  })
+
+  it('human dry run says when nothing would be verified', async () => {
+    const cwd = project()
+    const { code, out } = await cli(cwd, fakeSkills(cwd), ['add', localManifest('manifest.json', minimal), '--dry-run'])
+    expect(code).toBe(0)
+    expect(out).toContain('would verify: nothing — no pinned hash, no author lock location')
+  })
+})

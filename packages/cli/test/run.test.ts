@@ -33,6 +33,7 @@ describe('run — dispatch and meta-flags', () => {
     expect(code).toBe(0)
     expect(out).toContain('Commands:')
     expect(out).toContain('--dry-run')
+    expect(out).toContain('--progress            Live progress: one JSON event per line on stderr (NDJSON)')
   })
 
   it('intercepts --help before any command dispatch', async () => {

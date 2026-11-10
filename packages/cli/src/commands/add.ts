@@ -61,6 +61,27 @@ function isAllowedHost(host: string): boolean {
   return ALLOWED_HOSTS.includes(host)
 }
 
+/** Hosts whose first path segment is the owning account. */
+const GITHUB_HOSTS: readonly string[] = ['github.com', 'raw.githubusercontent.com', 'gist.githubusercontent.com']
+
+/** How the manifest source came to be trusted; reported by `add --dry-run`. */
+interface SourceTrust {
+  state: 'allowlisted' | 'confirmed' | 'local'
+  host?: string
+  owner?: string
+}
+
+/** `host` is undefined for a filesystem path; `confirmed` means the user accepted an unrecognised host. */
+function sourceTrust(source: string, host: string | undefined): SourceTrust {
+  if (host === undefined) return { state: 'local' }
+  const trust: SourceTrust = { state: isAllowedHost(host) ? 'allowlisted' : 'confirmed', host }
+  if (GITHUB_HOSTS.includes(host.toLowerCase())) {
+    const owner = new URL(source).pathname.split('/').find((segment) => segment !== '')
+    if (owner !== undefined) trust.owner = owner
+  }
+  return trust
+}
+
 /** Where bare set names resolve: the reference directory's sets root. */
 export const DEFAULT_DIRECTORY = 'https://skill-sets.md/sets'
 
@@ -132,7 +153,17 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const host = httpsHost(source)
   if (host !== undefined && !isAllowedHost(host)) {
     const proceed = await ctx.ui.confirm(`${JSON.stringify(host)} is not a recognised skill-set provider. Fetch from it anyway?`)
-    if (!proceed.ok) return proceed
+    if (!proceed.ok) {
+      if (proceed.error.code !== ErrorCodes.CONFIRM_REQUIRED) return proceed
+      // Same refusal, with the host as data so a consumer can name it.
+      return {
+        ok: false,
+        error: new SkillSetError(proceed.error.code, proceed.error.message, {
+          ...(proceed.error.hint === undefined ? {} : { hint: proceed.error.hint }),
+          data: { ...(proceed.error.data as Record<string, unknown>), host },
+        }),
+      }
+    }
     if (!proceed.data) {
       ctx.ui.out('Aborted — nothing fetched.')
       return { ok: true, data: { added: false } }
@@ -195,16 +226,37 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     ctx.ui.out(ctx.ui.style('dim', `would install: ${manifest.data.skills.join(', ')}`))
     if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', `would verify: set hash against sha256:${hash}`))
     if (sidecarAt !== undefined) ctx.ui.out(ctx.ui.style('dim', `would verify: remote content against the author lock at ${sidecarAt}, if published`))
+    if (hash === undefined && sidecarAt === undefined) ctx.ui.out(ctx.ui.style('dim', 'would verify: nothing — no pinned hash, no author lock location'))
+    const { version, description, author, homepage, skills } = manifest.data
     ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed, no skills installed`)
     return {
       ok: true,
       data: {
         name,
+        version,
+        ...(description === undefined ? {} : { description }),
+        ...(author === undefined ? {} : { author }),
+        ...(homepage === undefined ? {} : { homepage }),
         dryRun: true,
-        wouldInstall: manifest.data.skills,
+        wouldInstall: skills,
+        members: skills.map((locator) => {
+          const parsed = parseLocator(locator)
+          return {
+            locator,
+            source: parsed.source,
+            ...(parsed.skill === undefined ? {} : { skill: parsed.skill }),
+            ...(parsed.ref === undefined ? {} : { ref: parsed.ref }),
+          }
+        }),
         ...(hash === undefined && sidecarAt === undefined
           ? {}
           : { wouldVerify: { ...(hash === undefined ? {} : { hash }), ...(sidecarAt === undefined ? {} : { authorLock: sidecarAt }) } }),
+        verification: {
+          ...(hash === undefined ? {} : { hash }),
+          ...(sidecarAt === undefined ? {} : { authorLock: sidecarAt }),
+          plan: sidecarAt === undefined ? (hash === undefined ? 'none' : 'hash') : hash === undefined ? 'sidecar' : 'both',
+        },
+        trust: sourceTrust(source, host),
       },
     }
   }

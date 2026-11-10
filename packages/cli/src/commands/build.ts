@@ -54,5 +54,6 @@ export async function cmdBuild(args: string[], ctx: CommandContext): Promise<Com
   const index = writeIndex(ctx.cwd)
   if (!index.ok) return index
   ctx.ui.out(`${ctx.ui.style('green', '✓')} ${index.data}`)
+  ctx.ui.progress({ event: 'pages:built' })
   return { ok: true, data: { sets, index: index.data } }
 }

@@ -29,6 +29,7 @@ export async function cmdLock(args: string[], ctx: CommandContext): Promise<Comm
     ctx.ui.out(`${ctx.ui.style('green', '✓')} dry run — no files changed`)
     return { ok: true, data: { name, dryRun: true, lock: relative, setHash: locked.data.setHash } }
   }
+  ctx.ui.progress({ event: 'lock:written', path: relative })
   ctx.ui.out(`${ctx.ui.style('green', '✓')} Locked ${name} (${plural(manifest.data.skills.length, 'skill')}) — ${relative}`)
   ctx.ui.out(ctx.ui.style('dim', `setHash ${locked.data.setHash}`))
   return { ok: true, data: { name, lock: relative, setHash: locked.data.setHash, members: manifest.data.skills.length } }

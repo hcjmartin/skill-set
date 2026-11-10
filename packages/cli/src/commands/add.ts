@@ -139,12 +139,14 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     }
   }
 
+  ctx.ui.progress({ event: 'manifest:fetching', source })
   const text = await readManifestSource(source, ctx)
   if (!text.ok) return text
 
   const manifest = parseManifest(text.data)
   if (!manifest.ok) return manifest
   const name = manifest.data.name
+  ctx.ui.progress({ event: 'manifest:fetched', name, version: manifest.data.version, members: manifest.data.skills.length })
 
   // A member naming the reserved skill is refused here, before anything is written or installed;
   // unnamed locators resolving to it are caught (and undone) per-spawn in the resolver.
@@ -207,9 +209,11 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     }
   }
 
+  if (sidecarAt !== undefined) ctx.ui.progress({ event: 'lock:checking', url: sidecarAt })
   const sidecar = await loadSidecar(sidecarAt, name, ctx)
   if (!sidecar.ok) return sidecar
   if (sidecarAt !== undefined) {
+    ctx.ui.progress(sidecar.data === undefined ? { event: 'lock:absent' } : { event: 'lock:found', url: sidecarAt })
     ctx.ui.out(
       ctx.ui.style(
         'dim',
@@ -250,6 +254,7 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   mkdirSync(paths.dir, { recursive: true })
   writeFileSync(paths.manifest, text.data)
   ctx.ui.out(`${ctx.ui.style('green', '✓')} Wrote ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`)
+  ctx.ui.progress({ event: 'set:written', path: `${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}` })
 
   // Snapshot for verify-then-rollback: a rollback removes only folders absent here.
   const preFolders = listSkillFolders(ctx.cwd)
@@ -259,12 +264,16 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
 
   let verified: VerifiedAgainst | null = null
   let detail: { verification: VerificationDetail } | undefined
+  ctx.ui.progress({ event: 'verify:start' })
   if (sidecar.data !== undefined || hash !== undefined) {
     const outcome = await verifyReceipt(ctx, manifest.data, sidecar.data, hash, preFolders)
     if (!outcome.ok) return outcome
     verified = outcome.data.verifiedAgainst
     detail = { verification: outcome.data.detail }
   }
+  ctx.ui.progress({ event: 'verify:done', verifiedAgainst: verified })
+  // The lock lands during verification, but a consumer reads 'verify:done' as the gate before anything is kept.
+  if (verified !== null) ctx.ui.progress({ event: 'lock:written', path: `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}` })
 
   const lock = loadLockIfPresent(ctx.cwd, name)
   if (!lock.ok) return lock
@@ -273,6 +282,7 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   const origin = /^https:\/\//i.test(source) ? { [name]: source } : {}
   const index = writeIndex(ctx.cwd, origin)
   if (!index.ok) return index
+  ctx.ui.progress({ event: 'pages:built' })
 
   return { ok: true, data: { name, added: true, verified, install: install.data, ...(detail === undefined ? {} : { detail }) } }
 }

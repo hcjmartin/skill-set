@@ -7,6 +7,7 @@ import { DEFAULT_DIRECTORY, expandAddSource } from '../src/commands/add.ts'
 import { INDEX_FILENAME } from '../src/generate.ts'
 import { setHash } from '../src/hash.ts'
 import { createSetLock, parseSetLock, serializeSetLock } from '../src/lock.ts'
+import { progressEventSchema, UPSTREAM_TAIL_BYTES } from '../src/progress.ts'
 import { SETS_DIR } from '../src/project.ts'
 import { SKILLS_BIN_ENV, SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
 import { run, type RunOverrides } from '../src/run.ts'
@@ -1855,5 +1856,186 @@ describe('upstream override', () => {
     expect(code).toBe(1)
     expect((JSON.parse(out) as { error: { code: string } }).error.code).toBe('ERR_SKILLSET_UPSTREAM_MISMATCH')
     expect(fake.calls.length).toBe(spawnsBefore)
+  })
+})
+
+describe('--progress events', () => {
+  const manifestUrl = 'https://skill-set.md/duo.skill-set.json'
+  const sidecarUrl = 'https://skill-set.md/duo.skill-set.lock.json'
+  const alpha = 'hcjmartin/alpha-repo@alpha'
+  const gamma = 'hcjmartin/gamma-repo@gamma'
+  const duoManifest = `${JSON.stringify({ name: 'duo', version: '1.2.0', skills: [alpha, gamma] }, null, 2)}\n`
+  const hashes = { [alpha]: installedSkillHash('alpha'), [gamma]: installedSkillHash('gamma') }
+  const duoLock = serializeSetLock(
+    createSetLock('duo', '1.2.0', {
+      [alpha]: { skill: 'alpha', computedHash: hashes[alpha] },
+      [gamma]: { skill: 'gamma', computedHash: hashes[gamma] },
+    }),
+  )
+  const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+    const map: Record<string, string> = { [manifestUrl]: duoManifest, [sidecarUrl]: duoLock }
+    return url in map ? { ok: true as const, data: map[url]! } : { ok: false as const, error: new Error('unexpected url') as never }
+  }
+  const upstreamText = ['Resolving source', 'Finding skills', 'Checking agents', 'Installing files', 'Updating lock'].join('\n')
+
+  /** Every stderr line must be a schema-valid event; returns them without the envelope fields. */
+  function events(err: string): Array<Record<string, unknown>> {
+    return err
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => {
+        const { v, at, ...rest } = progressEventSchema.parse(JSON.parse(line))
+        expect(v).toBe(1)
+        expect(new Date(at).toISOString()).toBe(at)
+        return rest
+      })
+  }
+
+  it('parses as a global flag: no usage error, and a final done event mirrors the envelope', async () => {
+    const cwd = project()
+    const { code, out, err } = await cli(cwd, fakeSkills(cwd), ['bogus', '--progress', '--json'])
+    expect(code).toBe(2)
+    const envelope = JSON.parse(out) as { error: { code: string; message: string } }
+    expect(envelope.error.message).toBe('Unknown command "bogus"')
+    expect(events(err)).toEqual([{ event: 'done', ok: false, code: envelope.error.code }])
+  })
+
+  it('a scripted add emits the ordered event stream, and stdout still holds exactly one JSON object', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    const { code, out, err } = await cli(cwd, fake, ['add', manifestUrl, '--yes', '--json', '--progress'], { fetcher })
+    expect(code).toBe(0)
+    expect(events(err)).toEqual([
+      { event: 'manifest:fetching', source: manifestUrl },
+      { event: 'manifest:fetched', name: 'duo', version: '1.2.0', members: 2 },
+      { event: 'lock:checking', url: sidecarUrl },
+      { event: 'lock:found', url: sidecarUrl },
+      { event: 'set:written', path: `${SETS_DIR}/duo/duo.skill-set.json` },
+      { event: 'member:start', locator: alpha, index: 1, total: 2 },
+      { event: 'upstream:output', locator: alpha, text: `${upstreamText}\nInstalled alpha` },
+      { event: 'member:done', locator: alpha, skill: 'alpha', computedHash: hashes[alpha] },
+      { event: 'member:start', locator: gamma, index: 2, total: 2 },
+      { event: 'upstream:output', locator: gamma, text: `${upstreamText}\nInstalled gamma` },
+      { event: 'member:done', locator: gamma, skill: 'gamma', computedHash: hashes[gamma] },
+      { event: 'verify:start' },
+      { event: 'verify:done', verifiedAgainst: 'sidecar' },
+      { event: 'lock:written', path: `${SETS_DIR}/duo/duo.skill-set.lock.json` },
+      { event: 'pages:built' },
+      { event: 'done', ok: true },
+    ])
+    expect(out.endsWith('\n')).toBe(true)
+    expect(out.trimEnd().split('\n')).toHaveLength(1)
+    const envelope = JSON.parse(out) as { ok: boolean; command: string; data: { verified: string } }
+    expect(envelope).toMatchObject({ ok: true, command: 'add', data: { verified: 'sidecar' } })
+  })
+
+  it('emits nothing without the flag', async () => {
+    const cwd = project()
+    const { code, out, err } = await cli(cwd, fakeSkills(cwd), ['add', manifestUrl, '--yes', '--json'], { fetcher })
+    expect(code).toBe(0)
+    expect(err).toBe('')
+    expect(out.trimEnd().split('\n')).toHaveLength(1)
+  })
+
+  it('works without --json: events on stderr, human output unchanged on stdout', async () => {
+    const plain = project()
+    const withFlag = project()
+    const baseline = await cli(plain, fakeSkills(plain), ['add', manifestUrl, '--yes'], { fetcher })
+    const { code, out, err } = await cli(withFlag, fakeSkills(withFlag), ['add', manifestUrl, '--yes', '--progress'], { fetcher })
+    expect(code).toBe(0)
+    expect(out).toBe(baseline.out)
+    expect(baseline.err).toBe('')
+    const seen = events(err).map((e) => e.event)
+    expect(seen[0]).toBe('manifest:fetching')
+    expect(seen.at(-1)).toBe('done')
+  })
+
+  it('add with no author lock and no pin reports lock:absent and verify:done null', async () => {
+    const cwd = project()
+    const onlyManifest: RunOverrides['fetcher'] = async (url) =>
+      url === manifestUrl ? { ok: true as const, data: duoManifest } : { ok: false as const, error: new Error('unexpected url') as never }
+    const { err } = await cli(cwd, fakeSkills(cwd), ['add', manifestUrl, '--yes', '--json', '--progress'], { fetcher: onlyManifest })
+    const seen = events(err)
+    expect(seen).toContainEqual({ event: 'lock:absent' })
+    expect(seen).toContainEqual({ event: 'verify:done', verifiedAgainst: null })
+    expect(seen.map((e) => e.event)).not.toContain('lock:written')
+  })
+
+  it('install reports skipped and failed members, with the failure code on done', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'duo', alpha, gamma])
+    await cli(cwd, fake, ['install', 'duo'])
+    await cli(cwd, fake, ['lock', 'duo'])
+    rmSync(join(cwd, SKILLS_DIR, 'gamma'), { recursive: true, force: true })
+    // gamma's reinstall fails with noisy, oversized terminal output.
+    const noisy = `${'x'.repeat(5000)}\n\u001b[31mé boom\u001b[0m\n`
+    const runner: CommandRunner = async (command, args, opts) =>
+      args.includes('gamma') ? { ok: true, data: { exitCode: 1, stdout: '[]', stderr: noisy } } : fake.runner(command, args, opts)
+    const { code, out, err } = await cli(cwd, fake, ['install', 'duo', '--json', '--progress'], { runner })
+    expect(code).toBe(1)
+    const seen = events(err)
+    const output = seen.find((e) => e.event === 'upstream:output') as { text: string }
+    expect(Buffer.byteLength(output.text)).toBe(UPSTREAM_TAIL_BYTES)
+    expect(output.text.endsWith('\né boom')).toBe(true)
+    const failure = (JSON.parse(out) as { error: { code: string; data: { failed: Array<{ code: string; message: string }> } } }).error
+    expect(seen.filter((e) => e.event !== 'upstream:output')).toEqual([
+      { event: 'member:skipped', locator: alpha },
+      { event: 'member:start', locator: gamma, index: 2, total: 2 },
+      { event: 'member:failed', locator: gamma, code: failure.data.failed[0]!.code, message: failure.data.failed[0]!.message },
+      { event: 'done', ok: false, code: failure.code },
+    ])
+  })
+
+  it('a dry run emits no member events', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'duo', alpha, gamma])
+    const { err } = await cli(cwd, fake, ['install', 'duo', '--dry-run', '--json', '--progress'])
+    expect(events(err)).toEqual([{ event: 'done', ok: true }])
+  })
+
+  it('update and remove report member events and done', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'duo', alpha, gamma])
+    await cli(cwd, fake, ['install', 'duo'])
+    await cli(cwd, fake, ['lock', 'duo'])
+
+    const updated = await cli(cwd, fake, ['update', 'duo', '--json', '--progress'])
+    expect(updated.code).toBe(0)
+    const lock = parseSetLock(readFileSync(join(cwd, SETS_DIR, 'duo', 'duo.skill-set.lock.json'), 'utf8'))
+    if (!lock.ok) throw lock.error
+    const after = { [alpha]: lock.data.skills[alpha]!.computedHash, [gamma]: lock.data.skills[gamma]!.computedHash }
+    expect(after[alpha]).not.toBe(hashes[alpha])
+    expect(events(updated.err)).toEqual([
+      { event: 'member:start', locator: alpha, index: 1, total: 2 },
+      { event: 'member:start', locator: gamma, index: 2, total: 2 },
+      { event: 'member:done', locator: alpha, skill: 'alpha', computedHash: after[alpha] },
+      { event: 'member:done', locator: gamma, skill: 'gamma', computedHash: after[gamma] },
+      { event: 'lock:written', path: `${SETS_DIR}/duo/duo.skill-set.lock.json` },
+      { event: 'pages:built' },
+      { event: 'done', ok: true },
+    ])
+
+    // A sibling set shares alpha, so remove keeps it and removes only gamma.
+    await cli(cwd, fake, ['init', 'solo', alpha])
+    const removed = await cli(cwd, fake, ['remove', 'duo', '--yes', '--json', '--progress'])
+    expect(removed.code).toBe(0)
+    expect(events(removed.err)).toEqual([
+      { event: 'member:skipped', locator: alpha },
+      { event: 'member:start', locator: gamma, index: 2, total: 2 },
+      { event: 'member:done', locator: gamma, skill: 'gamma', computedHash: after[gamma] },
+      { event: 'done', ok: true },
+    ])
+  })
+
+  it('flags after -- still pass through to upstream instead of enabling progress', async () => {
+    const cwd = project()
+    const fake = fakeSkills(cwd)
+    await cli(cwd, fake, ['init', 'duo', alpha])
+    const { err } = await cli(cwd, fake, ['install', 'duo', '--json', '--', '--progress'])
+    expect(err).toBe('')
+    expect(fake.calls.at(-1)).toContain('--progress')
   })
 })

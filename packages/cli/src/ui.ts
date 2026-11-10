@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline/promises'
 import { styleText } from 'node:util'
 import ci from 'ci-info'
 import { ErrorCodes, SkillSetError, type Result } from './errors.ts'
+import { serializeProgressEvent, type ProgressEventInput } from './progress.ts'
 
 export interface Writer {
   write(text: string): unknown
@@ -10,6 +11,8 @@ export interface Writer {
 export interface UiOptions {
   json: boolean
   yes: boolean
+  /** Emit NDJSON progress events on stderr (--progress). */
+  progress?: boolean
   /** Overrides TTY/CI detection (tests, or a caller that knows better). */
   interactive?: boolean
   /** Scripted confirm answers for tests, consumed in order before the refusal logic. */
@@ -29,6 +32,8 @@ export interface Ui {
   out(line?: string): void
   /** Warning line on stderr; never silenced. */
   warn(line: string): void
+  /** Structured progress event, one NDJSON line on stderr; a no-op without --progress. */
+  progress(event: ProgressEventInput): void
   /** Terminal styling; identity when colors are off (non-TTY, --json, or injected streams). */
   style(format: Parameters<typeof styleText>[0], text: string): string
   /** Brand accent (#ff5733), degrading with terminal color depth; identity when colors are off. */
@@ -64,6 +69,9 @@ export function createUi(opts: UiOptions): Ui {
     },
     warn(line) {
       stderr.write(`${line}\n`)
+    },
+    progress(event) {
+      if (opts.progress === true) stderr.write(serializeProgressEvent(event))
     },
     style(format, text) {
       return colors ? styleText(format, text) : text

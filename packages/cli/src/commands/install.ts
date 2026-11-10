@@ -14,6 +14,7 @@ import {
   SKILLS_DIR,
   skillsUpstream,
 } from '../resolver.ts'
+import { upstreamTail } from '../progress.ts'
 import type { UpstreamSecurity } from '../upstream-add.ts'
 import { renderSecuritySummary, renderUpstreamPanel, watchForUpstreamExpansion } from '../upstream-output.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
@@ -106,6 +107,8 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
     security?: UpstreamSecurity
   }> = []
   const failed: Array<{ locator: string; code: string; message: string }> = []
+  const total = manifest.data.skills.length
+  for (const locator of skipped) ctx.ui.progress({ event: 'member:skipped', locator })
   const expansion = watchForUpstreamExpansion(ctx.ui)
   try {
     // Sequential on purpose: the upstream CLI and its project lock are not concurrency-safe.
@@ -113,12 +116,17 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
       ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(buildAddInvocation(p.locator), ctx.passthrough)}`))
       if (ctx.ui.interactive) ctx.ui.out(ctx.ui.style('dim', 'press e to expand'))
       const parsed = parseLocator(p.locator)
+      ctx.ui.progress({ event: 'member:start', locator: p.locator, index: manifest.data.skills.indexOf(p.locator) + 1, total })
       const resolved = await resolveMember(p.locator, {
         cwd: ctx.cwd,
         runner: ctx.runner,
         extraArgs: ctx.passthrough,
         onSetsDirRestored: () => ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE)),
-        onUpstreamOutput: (output) => renderUpstreamPanel(ctx.ui, parsed.skill ?? parsed.source, output, expansion.expanded()),
+        onUpstreamOutput: (output) => {
+          const text = upstreamTail(output)
+          if (text !== '') ctx.ui.progress({ event: 'upstream:output', locator: p.locator, text })
+          renderUpstreamPanel(ctx.ui, parsed.skill ?? parsed.source, output, expansion.expanded())
+        },
       })
       if (resolved.ok) {
         installed.push({
@@ -127,8 +135,10 @@ export async function installSet(ctx: CommandContext, name: string): Promise<Com
           computedHash: resolved.data.computedHash,
           ...(resolved.data.security === undefined ? {} : { security: resolved.data.security }),
         })
+        ctx.ui.progress({ event: 'member:done', locator: p.locator, skill: resolved.data.skill, computedHash: resolved.data.computedHash })
       } else {
         failed.push({ locator: p.locator, code: resolved.error.code, message: resolved.error.message })
+        ctx.ui.progress({ event: 'member:failed', locator: p.locator, code: resolved.error.code, message: resolved.error.message })
       }
     }
   } finally {

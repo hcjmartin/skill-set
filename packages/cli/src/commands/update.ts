@@ -1,5 +1,6 @@
 import { ErrorCodes, SkillSetError } from '../errors.ts'
-import { loadLockIfPresent, loadManifest, writeIndex, writeSetPage } from '../project.ts'
+import { LOCK_SUFFIX } from '../lock.ts'
+import { loadLockIfPresent, loadManifest, SETS_DIR, writeIndex, writeSetPage } from '../project.ts'
 import { buildUpdateInvocation, locateMember, restoreSetsDir, runUpstream, SETS_DIR_RESTORED_NOTICE, snapshotSetsDir } from '../resolver.ts'
 import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
@@ -58,17 +59,26 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
   }
 
   ctx.ui.out(ctx.ui.style('dim', `running: ${formatInvocation(invocation, ctx.passthrough)}`))
+  members.forEach((member, i) => ctx.ui.progress({ event: 'member:start', locator: member.locator, index: i + 1, total: members.length }))
+  const failAll = (code: string, message: string): void => {
+    for (const member of members) ctx.ui.progress({ event: 'member:failed', locator: member.locator, code, message })
+  }
   // Set definitions live inside the skills dir; every upstream spawn is bracketed so they survive.
   const guard = snapshotSetsDir(ctx.cwd)
   const run = await runUpstream(invocation, { cwd: ctx.cwd, runner: ctx.runner, extraArgs: ctx.passthrough, capture: ctx.ui.json })
   if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
-  if (!run.ok) return run
+  if (!run.ok) {
+    failAll(run.error.code, run.error.message)
+    return run
+  }
   if (run.data.exitCode !== 0) {
+    const message = `Updating ${JSON.stringify(name)} failed: the skills CLI exited with code ${run.data.exitCode}`
+    failAll(ErrorCodes.RESOLVE_FAILED, message)
     return {
       ok: false,
       error: new SkillSetError(
         ErrorCodes.RESOLVE_FAILED,
-        `Updating ${JSON.stringify(name)} failed: the skills CLI exited with code ${run.data.exitCode}`,
+        message,
         {
           hint: ctx.ui.json ? 'The captured skills output is in data.stderr.' : 'See the skills output above for the cause.',
           data: {
@@ -81,6 +91,15 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
     }
   }
 
+  for (const member of members) {
+    const located = locateMember(member.locator, { cwd: ctx.cwd })
+    ctx.ui.progress(
+      located.ok
+        ? { event: 'member:done', locator: member.locator, skill: located.data.skill, computedHash: located.data.computedHash }
+        : { event: 'member:failed', locator: member.locator, code: located.error.code, message: located.error.message },
+    )
+  }
+
   // Content may have changed: re-lock only if a lock existed, then refresh generated files.
   const existing = loadLockIfPresent(ctx.cwd, name)
   if (!existing.ok) return existing
@@ -90,6 +109,7 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
     if (!relocked.ok) return relocked
     setHash = relocked.data.setHash
     ctx.ui.out(`${ctx.ui.style('green', '✓')} Re-locked ${name} — setHash ${setHash}`)
+    ctx.ui.progress({ event: 'lock:written', path: `${SETS_DIR}/${name}/${name}${LOCK_SUFFIX}` })
   } else {
     ctx.ui.out(ctx.ui.style('dim', `No set-lock to refresh; create one with "skill-set lock ${name}".`))
   }
@@ -98,6 +118,7 @@ export async function cmdUpdate(args: string[], ctx: CommandContext): Promise<Co
   writeSetPage(ctx.cwd, manifest.data, lock.data)
   const index = writeIndex(ctx.cwd)
   if (!index.ok) return index
+  ctx.ui.progress({ event: 'pages:built' })
 
   return { ok: true, data: { name, updated: names, relocked: setHash !== undefined, setHash } }
 }

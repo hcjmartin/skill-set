@@ -54,6 +54,7 @@ export async function cmdInit(args: string[], ctx: CommandContext): Promise<Comm
   const manifest = { $schema: DRAFT_SCHEMA_URL, name, version: '0.1.0', skills: locators }
   writeFileSync(paths.manifest, `${JSON.stringify(manifest, null, 2)}\n`)
   ctx.ui.out(`${ctx.ui.style('green', '✓')} Created skill-set ${JSON.stringify(name)} — ${relative} (${plural(locators.length, 'skill')})`)
+  ctx.ui.progress({ event: 'set:written', path: relative })
 
   // A convenience offer, not a gate: silently declined when no prompt is possible.
   const proceed = await ctx.ui.confirm(`Install the skills and generate the set files now?`, { optional: true })
@@ -67,6 +68,7 @@ export async function cmdInit(args: string[], ctx: CommandContext): Promise<Comm
     const index = writeIndex(ctx.cwd)
     if (!index.ok) return index
     ctx.ui.out(`${ctx.ui.style('green', '✓')} Generated ${page} and ${index.data}`)
+    ctx.ui.progress({ event: 'pages:built' })
     return { ok: true, data: { name, manifest: relative, members: locators.length, install: install.data, page, index: index.data } }
   }
 

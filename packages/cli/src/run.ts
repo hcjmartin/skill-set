@@ -46,6 +46,7 @@ ${Object.values(COMMANDS)
 
 Flags:
   --json                Machine-readable output: exactly one JSON object on stdout
+  --progress            Live progress: one JSON event per line on stderr (NDJSON)
   --yes, -y             Assume yes for prompts (required where a prompt would block CI)
   --dry-run             Print what would run or be written; change nothing, spawn nothing
   --hash sha256:<hex>   For add: keep the set only if its content matches this set hash
@@ -98,11 +99,13 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
   let json = false
   let yes = false
   let dryRun = false
+  let progress = false
   const rest: string[] = []
   for (const arg of ours) {
     if (arg === '--json') json = true
     else if (arg === '--yes' || arg === '-y') yes = true
     else if (arg === '--dry-run') dryRun = true
+    else if (arg === '--progress') progress = true
     else rest.push(arg)
   }
   const [verb, ...args] = rest
@@ -110,6 +113,7 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
   const ui = createUi({
     json,
     yes,
+    progress,
     interactive: overrides.interactive,
     confirmAnswers: overrides.confirmAnswers,
     promptAnswers: overrides.promptAnswers,
@@ -178,6 +182,7 @@ export async function run(argv: readonly string[], overrides: RunOverrides = {})
     stderr.write(`${ui.style(['red', 'bold'], 'error')} ${result.error.message}\n`)
     if (result.error.hint !== undefined) stderr.write(`${ui.style('dim', result.error.hint)}\n`)
   }
+  ui.progress(result.ok ? { event: 'done', ok: true } : { event: 'done', ok: false, code: result.error.code })
   return result.ok ? 0 : exitCodeFor(result.error.code)
 }
 

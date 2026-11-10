@@ -17,6 +17,12 @@ import { formatInvocation, splitFlags, usageError, type CommandContext, type Com
 
 export const REMOVE_USAGE = 'skill-set remove <set>'
 
+interface LocatedMember {
+  locator: string
+  skill: string
+  computedHash: string
+}
+
 interface KeptSkill {
   skill?: string
   member?: string
@@ -41,7 +47,7 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
   // this ensures a broken sibling manifest or lock cannot strand a half-removed set.
   const counted = referenceCount(ctx, name, manifest.data.skills)
   if (!counted.ok) return counted
-  const { removable, kept: skillsKept } = counted.data
+  const { removable, kept: skillsKept, located } = counted.data
   printRemovalPlan(ctx, name, source, removable, skillsKept)
 
   if (ctx.dryRun) {
@@ -66,6 +72,19 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
     removeSkills = alsoRemove.data
   }
 
+  // Progress view of the plan: members whose skill is being removed start; the rest are skipped.
+  const total = manifest.data.skills.length
+  const removing = removeSkills ? located.filter((m) => removable.includes(m.skill)) : []
+  for (const locator of manifest.data.skills) {
+    if (!removing.some((m) => m.locator === locator)) ctx.ui.progress({ event: 'member:skipped', locator })
+  }
+  for (const m of removing) {
+    ctx.ui.progress({ event: 'member:start', locator: m.locator, index: manifest.data.skills.indexOf(m.locator) + 1, total })
+  }
+  const failAll = (code: string, message: string): void => {
+    for (const m of removing) ctx.ui.progress({ event: 'member:failed', locator: m.locator, code, message })
+  }
+
   if (removeSkills) {
     // Cleanup runs first so a failed or partially completed upstream removal cannot also erase the
     // set definition needed to understand and retry the operation.
@@ -76,6 +95,7 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
     const run = await runUpstream(invocation, { cwd: ctx.cwd, runner: ctx.runner, extraArgs: ctx.passthrough, capture: ctx.ui.json })
     if (restoreSetsDir(ctx.cwd, guard)) ctx.ui.out(ctx.ui.style('yellow', SETS_DIR_RESTORED_NOTICE))
     if (!run.ok) {
+      failAll(run.error.code, run.error.message)
       return {
         ok: false,
         error: new SkillSetError(
@@ -90,6 +110,7 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
       }
     }
     if (run.data.exitCode !== 0) {
+      failAll(ErrorCodes.RESOLVE_FAILED, `Removing skills failed: the skills CLI exited with code ${run.data.exitCode}`)
       return {
         ok: false,
         error: new SkillSetError(
@@ -113,6 +134,7 @@ export async function cmdRemove(args: string[], ctx: CommandContext): Promise<Co
     }
 
     ctx.ui.out(ctx.ui.style('dim', `  removed skills: ${removable.join(', ')}`))
+    for (const m of removing) ctx.ui.progress({ event: 'member:done', ...m })
   }
 
   // Only after all selected cleanup succeeds may the set artifacts and index be mutated.
@@ -158,12 +180,16 @@ function referenceCount(
   ctx: CommandContext,
   name: string,
   members: readonly string[],
-): Result<{ removable: string[]; kept: KeptSkill[] }> {
+): Result<{ removable: string[]; kept: KeptSkill[]; located: LocatedMember[] }> {
   const kept: KeptSkill[] = []
   const mine = new Map<string, string>()
+  const locatedMembers: LocatedMember[] = []
   for (const locator of members) {
     const located = locateMember(locator, { cwd: ctx.cwd })
-    if (located.ok) mine.set(located.data.skill, locator)
+    if (located.ok) {
+      mine.set(located.data.skill, locator)
+      locatedMembers.push({ locator, skill: located.data.skill, computedHash: located.data.computedHash })
+    }
     else kept.push({ member: locator, reason: `not locatable (${located.error.code}) — left untouched` })
   }
 
@@ -196,5 +222,5 @@ function referenceCount(
   }
 
   for (const [skill, reason] of shared) kept.push({ skill, reason })
-  return { ok: true, data: { removable: [...mine.keys()].filter((s) => !shared.has(s)), kept } }
+  return { ok: true, data: { removable: [...mine.keys()].filter((s) => !shared.has(s)), kept, located: locatedMembers } }
 }

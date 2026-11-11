@@ -9,6 +9,7 @@ import { cmdInstall } from './commands/install.ts'
 import { cmdLock } from './commands/lock.ts'
 import { cmdRemove } from './commands/remove.ts'
 import { cmdShare } from './commands/share.ts'
+import { cmdTrust } from './commands/trust.ts'
 import { cmdUpdate } from './commands/update.ts'
 import { cmdVerify } from './commands/verify.ts'
 import type { CommandContext, CommandResult } from './commands/context.ts'
@@ -31,6 +32,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   verify: { usage: 'verify [<set>] [--frozen]', describe: 'Verify installed content against each set lock (frozen: require the lock)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
+  trust: { usage: 'trust <source> | --list | --remove <source>', describe: 'Trust a manifest source, so add fetches from it without asking', handler: cmdTrust },
 }
 
 const TAGLINE = 'define, share, and install named, versioned sets of agent skills'

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchManifest } from '../src/commands/add.ts'
+import type { TrustStore } from '../src/trust.ts'
 
 // The spec §3 fetch boundary, exercised against a stubbed global fetch — no network.
 
@@ -123,5 +124,61 @@ describe('fetchManifest', () => {
     const result = await fetchManifest('https://skill-set.md/x.skill-set.json')
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data).toBe('{"name":"x"}')
+  })
+
+  describe('redirects and the trust store', () => {
+    const at = '2026-11-11T00:00:00.000Z'
+    const store: TrustStore = {
+      version: 1,
+      sources: [
+        { host: 'cdn.example.test', addedAt: at },
+        { host: 'raw.githubusercontent.com', owner: 'hcjmartin', addedAt: at },
+      ],
+    }
+
+    it('follows a redirect to a trusted host', async () => {
+      stub((url) => (url.startsWith('https://cdn.example.test/') ? new Response('ok') : redirect('https://cdn.example.test/x')))
+      const result = await fetchManifest('https://example.test/start', store)
+      expect(result.ok).toBe(true)
+    })
+
+    it('follows a redirect to a trusted GitHub owner, and refuses another owner on that host', async () => {
+      stub((url) =>
+        url.startsWith('https://raw.githubusercontent.com/') ? new Response('ok') : redirect('https://raw.githubusercontent.com/HCJMartin/sets/x'),
+      )
+      expect((await fetchManifest('https://example.test/start', store)).ok).toBe(true)
+
+      const fetched = stub(() => redirect('https://raw.githubusercontent.com/someone-else/sets/x'))
+      const result = await fetchManifest('https://example.test/start', store)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error.message).toContain('redirected to unrecognised host raw.githubusercontent.com')
+      expect(fetched).toHaveBeenCalledTimes(1)
+    })
+
+    it('refuses a same-host redirect that leaves a trusted owner scope', async () => {
+      const start = 'https://raw.githubusercontent.com/hcjmartin/sets/main/a.skill-set.json'
+      const fetched = stub(() => redirect('https://raw.githubusercontent.com/evil/sets/main/a.skill-set.json'))
+      const result = await fetchManifest(start, store)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error.message).toContain('redirected outside the trusted scope raw.githubusercontent.com/hcjmartin')
+      expect(fetched).toHaveBeenCalledTimes(1)
+    })
+
+    it('follows a same-host redirect that stays inside a trusted owner scope, or on a confirmed host', async () => {
+      const start = 'https://raw.githubusercontent.com/hcjmartin/sets/main/a.skill-set.json'
+      stub((url) => (url.includes('/moved') ? new Response('ok') : redirect(url.replace('/a.skill-set.json', '/moved'))))
+      expect((await fetchManifest(start, store)).ok).toBe(true)
+      // A confirmed host has no store entry, so its grant is the whole host, as before.
+      expect((await fetchManifest('https://example.test/a.skill-set.json', store)).ok).toBe(true)
+    })
+
+    it('refuses a redirect to an untrusted host, with or without a store', async () => {
+      const fetched = stub(() => redirect('https://elsewhere.test/x'))
+      for (const result of [await fetchManifest('https://example.test/start', store), await fetchManifest('https://example.test/start')]) {
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.error.message).toContain('redirected to unrecognised host elsewhere.test')
+      }
+      expect(fetched).toHaveBeenCalledTimes(2)
+    })
   })
 })

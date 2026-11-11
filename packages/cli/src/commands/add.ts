@@ -6,6 +6,7 @@ import { MANIFEST_SUFFIX, NAME_PATTERN, parseManifest, type Manifest } from '../
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
 import { parseLocator, reservedMembers, reservedNameError, SKILLS_DIR, skillsUpstream } from '../resolver.ts'
 import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers } from '../staging.ts'
+import { CONFIG_DIR_ENV, emptyTrustStore, findTrustedSource, isGithubHost, isTrustedSource, loadTrustStore, sourceScope, trustStorePath, urlOwner, type TrustStore } from '../trust.ts'
 import { installSet } from './install.ts'
 import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
@@ -53,7 +54,8 @@ interface VerificationDetail {
 
 /**
  * Hosts that serve skill-set manifests without a pre-fetch warning. Any other host prompts
- * for confirmation before `add` reaches out (an agent may be running unattended). Amend here.
+ * for confirmation before `add` reaches out (an agent may be running unattended), unless the
+ * user-level trust store (trust.ts) covers it. Amend here.
  */
 export const ALLOWED_HOSTS: readonly string[] = ['skill-set.md', 'skill-sets.md']
 
@@ -61,25 +63,35 @@ function isAllowedHost(host: string): boolean {
   return ALLOWED_HOSTS.includes(host)
 }
 
-/** Hosts whose first path segment is the owning account. */
-const GITHUB_HOSTS: readonly string[] = ['github.com', 'raw.githubusercontent.com', 'gist.githubusercontent.com']
-
-/** How the manifest source came to be trusted; reported by `add --dry-run`. */
+/** How the manifest source is trusted; reported by `add --dry-run`. */
 interface SourceTrust {
-  state: 'allowlisted' | 'confirmed' | 'local'
+  state: 'allowlisted' | 'trusted' | 'confirmed' | 'local'
   host?: string
   owner?: string
+  /** The matched trust-store entry, `host` or `host/owner`; only with `trusted`. */
+  scope?: string
 }
 
-/** `host` is undefined for a filesystem path; `confirmed` means the user accepted an unrecognised host. */
-function sourceTrust(source: string, host: string | undefined): SourceTrust {
+/**
+ * `host` is undefined for a filesystem path. `trusted` is a trust-store match; `confirmed` means
+ * the user accepted an unrecognised host (nothing is fetched from one otherwise).
+ */
+function sourceTrust(source: string, host: string | undefined, store: TrustStore): SourceTrust {
   if (host === undefined) return { state: 'local' }
-  const trust: SourceTrust = { state: isAllowedHost(host) ? 'allowlisted' : 'confirmed', host }
-  if (GITHUB_HOSTS.includes(host.toLowerCase())) {
-    const owner = new URL(source).pathname.split('/').find((segment) => segment !== '')
+  const entry = isAllowedHost(host) ? undefined : findTrustedSource(source, store)
+  const trust: SourceTrust = { state: isAllowedHost(host) ? 'allowlisted' : entry !== undefined ? 'trusted' : 'confirmed', host }
+  if (isGithubHost(host)) {
+    const owner = urlOwner(new URL(source))
     if (owner !== undefined) trust.owner = owner
   }
+  if (entry !== undefined) trust.scope = sourceScope(entry)
   return trust
+}
+
+/** The narrowest entry that would trust a source: host + owner on a GitHub host, else the host. */
+function suggestedEntry(source: string, host: string): { host: string; owner?: string } {
+  const owner = isGithubHost(host) ? urlOwner(new URL(source)) : undefined
+  return { host, ...(owner === undefined ? {} : { owner }) }
 }
 
 /** Where bare set names resolve: the reference directory's sets root. */
@@ -148,10 +160,27 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   ctx.ui.out(`Adding skill-set from ${source}...`)
   if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', 'content will be verified against the provided sha256 hash'))
 
-  // Unrecognised hosts are confirmed before any bytes are fetched; a declined or
-  // unanswerable prompt aborts with nothing fetched.
+  // Unrecognised hosts are confirmed before any bytes are fetched, dry run or not; a declined
+  // or unanswerable prompt aborts with nothing fetched. A trust-store entry stands in for the
+  // confirmation. A malformed store cannot block a built-in provider, which never needs it: that
+  // warns and proceeds as if the store were empty. Anywhere else the decision depends on the
+  // file, so it fails. A store that cannot be located at all (no home directory) is flagged and
+  // treated as empty everywhere: that is exactly the pre-store behaviour.
   const host = httpsHost(source)
-  if (host !== undefined && !isAllowedHost(host)) {
+  let store = emptyTrustStore()
+  if (host !== undefined) {
+    const path = trustStorePath()
+    if (path === undefined) {
+      ctx.ui.warn(`warning: no home directory, so the trusted sources file cannot be located; set ${CONFIG_DIR_ENV} to use one. Continuing without it.`)
+    } else {
+      const loaded = loadTrustStore(path)
+      if (loaded.ok) store = loaded.data
+      else if (!isAllowedHost(host)) return loaded
+      else ctx.ui.warn(`warning: ignoring the trusted sources file at ${path}: it is not valid. Delete it to clear this warning.`)
+    }
+  }
+  const recognised = host === undefined || isAllowedHost(host) || isTrustedSource(source, store)
+  if (host !== undefined && !recognised) {
     const proceed = await ctx.ui.confirm(`${JSON.stringify(host)} is not a recognised skill-set provider. Fetch from it anyway?`)
     if (!proceed.ok) {
       if (proceed.error.code !== ErrorCodes.CONFIRM_REQUIRED) return proceed
@@ -159,7 +188,7 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
       return {
         ok: false,
         error: new SkillSetError(proceed.error.code, proceed.error.message, {
-          ...(proceed.error.hint === undefined ? {} : { hint: proceed.error.hint }),
+          hint: `Re-run with --yes to confirm non-interactively, or trust the source with "skill-set trust ${sourceScope(suggestedEntry(source, host))}".`,
           data: { ...(proceed.error.data as Record<string, unknown>), host },
         }),
       }
@@ -169,9 +198,10 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
       return { ok: true, data: { added: false } }
     }
   }
+  const trust = sourceTrust(source, host, store)
 
   ctx.ui.progress({ event: 'manifest:fetching', source })
-  const text = await readManifestSource(source, ctx)
+  const text = await readManifestSource(source, ctx, store)
   if (!text.ok) return text
 
   const manifest = parseManifest(text.data)
@@ -256,13 +286,13 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
           ...(sidecarAt === undefined ? {} : { authorLock: sidecarAt }),
           plan: sidecarAt === undefined ? (hash === undefined ? 'none' : 'hash') : hash === undefined ? 'sidecar' : 'both',
         },
-        trust: sourceTrust(source, host),
+        trust,
       },
     }
   }
 
   if (sidecarAt !== undefined) ctx.ui.progress({ event: 'lock:checking', url: sidecarAt })
-  const sidecar = await loadSidecar(sidecarAt, name, ctx)
+  const sidecar = await loadSidecar(sidecarAt, name, ctx, store)
   if (!sidecar.ok) return sidecar
   if (sidecarAt !== undefined) {
     ctx.ui.progress(sidecar.data === undefined ? { event: 'lock:absent' } : { event: 'lock:found', url: sidecarAt })
@@ -571,11 +601,12 @@ async function loadSidecar(
   location: string | undefined,
   name: string,
   ctx: CommandContext,
+  store: TrustStore,
 ): Promise<Result<{ lock: SetLock; text: string } | undefined>> {
   if (location === undefined) return { ok: true, data: undefined }
   let text: string | undefined
   if (/^https:\/\//i.test(location)) {
-    const fetched = await (ctx.fetcher ?? fetchManifest)(location)
+    const fetched = await (ctx.fetcher === undefined ? fetchManifest(location, store) : ctx.fetcher(location))
     text = fetched.ok ? fetched.data : undefined
   } else if (existsSync(location)) {
     text = readFileSync(location, 'utf8')
@@ -630,8 +661,8 @@ function pinUsage(message: string): Result<never> {
   return { ok: false, error: new SkillSetError(ErrorCodes.USAGE, message, { hint: `Usage: ${ADD_USAGE}` }) }
 }
 
-async function readManifestSource(source: string, ctx: CommandContext): Promise<Result<string>> {
-  if (/^https:\/\//i.test(source)) return (ctx.fetcher ?? fetchManifest)(source)
+async function readManifestSource(source: string, ctx: CommandContext, store: TrustStore): Promise<Result<string>> {
+  if (/^https:\/\//i.test(source)) return ctx.fetcher === undefined ? fetchManifest(source, store) : ctx.fetcher(source)
   if (/^http:\/\//i.test(source)) {
     return fetchFail(source, 'manifests are fetched over HTTPS only', 'Serve the manifest at an https:// URL.')
   }
@@ -641,10 +672,14 @@ async function readManifestSource(source: string, ctx: CommandContext): Promise<
   return { ok: true, data: readFileSync(source, 'utf8') }
 }
 
-export async function fetchManifest(url: string): Promise<Result<string>> {
-  // The initial host was already accepted by the command (allowlisted or confirmed); the
-  // redirect follower keeps requests on that host or an allowlisted one, never a new host.
+export async function fetchManifest(url: string, store: TrustStore = emptyTrustStore()): Promise<Result<string>> {
+  // The initial host was already accepted by the command (allowlisted, trusted or confirmed);
+  // the redirect follower keeps requests on that host, an allowlisted one or a location the
+  // trust store covers, never anywhere else. A grant scoped to one GitHub owner is narrower
+  // than the host, so a same-host hop then has to stay inside the store's trust as well.
   const initialHost = httpsHost(url)
+  const initialEntry = initialHost === undefined || isAllowedHost(initialHost) ? undefined : findTrustedSource(url, store)
+  const hostWide = initialEntry?.owner === undefined
   let current = url
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     let response: Response
@@ -662,8 +697,13 @@ export async function fetchManifest(url: string): Promise<Result<string>> {
       current = new URL(location, current).toString()
       if (!current.startsWith('https://')) return fetchFail(url, 'redirected to a non-HTTPS location')
       const nextHost = new URL(current).host
-      if (!isAllowedHost(nextHost) && nextHost !== initialHost) {
-        return fetchFail(url, `redirected to unrecognised host ${nextHost}`, 'Redirects must stay on the original or a recognised skill-set host.')
+      if (!isAllowedHost(nextHost) && !isTrustedSource(current, store)) {
+        if (nextHost !== initialHost) {
+          return fetchFail(url, `redirected to unrecognised host ${nextHost}`, 'Redirects must stay on the original host, a recognised skill-set host or a trusted source.')
+        }
+        if (!hostWide) {
+          return fetchFail(url, `redirected outside the trusted scope ${sourceScope(initialEntry!)}`, 'Redirects from a source trusted by owner must stay with that owner, or go to a recognised or trusted source.')
+        }
       }
       continue
     }

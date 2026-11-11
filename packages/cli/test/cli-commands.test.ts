@@ -11,6 +11,7 @@ import { progressEventSchema, UPSTREAM_TAIL_BYTES } from '../src/progress.ts'
 import { SETS_DIR } from '../src/project.ts'
 import { SKILLS_BIN_ENV, SKILLS_DIR, type CommandRunner } from '../src/resolver.ts'
 import { run, type RunOverrides } from '../src/run.ts'
+import { CONFIG_DIR_ENV, saveTrustStore, TRUST_STORE_FILENAME } from '../src/trust.ts'
 import type { Writer } from '../src/ui.ts'
 
 // End-to-end command tests over real tmp projects, hermetic via a stateful fake of the
@@ -646,6 +647,114 @@ describe('add — trusted-host allowlist', () => {
     expect(code).toBe(0)
     expect(fetched).toEqual([unknownUrl, 'https://unknown-origin.invalid/unknown-set.skill-set.lock.json'])
     expect(existsSync(join(cwd, SETS_DIR, 'unknown-set'))).toBe(true)
+  })
+})
+
+describe('add — trusted sources store', () => {
+  const body = (name: string) =>
+    `${JSON.stringify({ name, version: '1.0.0', description: 'A set.', skills: ['hcjmartin/gamma-repo@gamma'] }, null, 2)}\n`
+  const previous = process.env[CONFIG_DIR_ENV]
+  afterEach(() => {
+    if (previous === undefined) delete process.env[CONFIG_DIR_ENV]
+    else process.env[CONFIG_DIR_ENV] = previous
+  })
+
+  function trusting(sources: Array<{ host: string; owner?: string }>): void {
+    const dir = project()
+    process.env[CONFIG_DIR_ENV] = dir
+    const saved = saveTrustStore({ version: 1, sources: sources.map((s) => ({ ...s, addedAt: '2026-11-11T00:00:00.000Z' })) })
+    expect(saved.ok).toBe(true)
+  }
+
+  function serving(url: string, name: string): { fetcher: RunOverrides['fetcher']; fetched: string[] } {
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (requested: string) => {
+      fetched.push(requested)
+      return requested === url
+        ? { ok: true as const, data: body(name) }
+        : { ok: false as const, error: new Error('unexpected url') as never }
+    }
+    return { fetcher, fetched }
+  }
+
+  it('a trusted host needs no --yes for the host: one answer covers the install confirm', async () => {
+    trusting([{ host: 'sets.example.test' }])
+    const cwd = project()
+    const url = 'https://sets.example.test/trusted-set.skill-set.json'
+    const { fetcher, fetched } = serving(url, 'trusted-set')
+    const { code } = await cli(cwd, fakeSkills(cwd), ['add', url], { fetcher, confirmAnswers: [true] })
+    expect(code).toBe(0)
+    expect(fetched[0]).toBe(url)
+    expect(existsSync(join(cwd, SETS_DIR, 'trusted-set'))).toBe(true)
+  })
+
+  it('an owner entry trusts that GitHub owner only', async () => {
+    trusting([{ host: 'raw.githubusercontent.com', owner: 'HCJMartin' }])
+    const mine = 'https://raw.githubusercontent.com/hcjmartin/sets/main/owner-set.skill-set.json'
+    const cwd = project()
+    const ok = serving(mine, 'owner-set')
+    expect((await cli(cwd, fakeSkills(cwd), ['add', mine], { fetcher: ok.fetcher, confirmAnswers: [true] })).code).toBe(0)
+
+    const theirs = 'https://raw.githubusercontent.com/someone-else/sets/main/other-set.skill-set.json'
+    const other = project()
+    const refused = serving(theirs, 'other-set')
+    const { code, err } = await cli(other, fakeSkills(other), ['add', theirs], { fetcher: refused.fetcher })
+    expect(code).toBe(2)
+    expect(err).toContain('skill-set trust raw.githubusercontent.com/someone-else')
+    expect(refused.fetched).toEqual([])
+  })
+
+  it('dry run reports a store match as "trusted" with the matched scope', async () => {
+    trusting([{ host: 'sets.example.test' }, { host: 'raw.githubusercontent.com', owner: 'hcjmartin' }])
+    const cwd = project()
+    const url = 'https://sets.example.test/trusted-set.skill-set.json'
+    const host = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run', '--json'], { fetcher: serving(url, 'trusted-set').fetcher })
+    expect((JSON.parse(host.out) as { data: { trust: unknown } }).data.trust).toEqual({
+      state: 'trusted',
+      host: 'sets.example.test',
+      scope: 'sets.example.test',
+    })
+
+    const gh = 'https://raw.githubusercontent.com/HCJMartin/sets/main/owner-set.skill-set.json'
+    const owner = await cli(cwd, fakeSkills(cwd), ['add', gh, '--dry-run', '--json'], { fetcher: serving(gh, 'owner-set').fetcher })
+    expect((JSON.parse(owner.out) as { data: { trust: unknown } }).data.trust).toEqual({
+      state: 'trusted',
+      host: 'raw.githubusercontent.com',
+      owner: 'HCJMartin',
+      scope: 'raw.githubusercontent.com/hcjmartin',
+    })
+    expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
+  })
+
+  it('a malformed store stops add from an unrecognised host before any fetch', async () => {
+    const dir = project()
+    process.env[CONFIG_DIR_ENV] = dir
+    writeFileSync(join(dir, TRUST_STORE_FILENAME), '{"version":1,"sources":"nope"}')
+    const cwd = project()
+    const url = 'https://sets.example.test/trusted-set.skill-set.json'
+    const { fetcher, fetched } = serving(url, 'trusted-set')
+    const { code, out } = await cli(cwd, fakeSkills(cwd), ['add', url, '--yes', '--json'], { fetcher })
+    expect(code).toBe(1)
+    expect((JSON.parse(out) as { error: { code: string } }).error.code).toBe('ERR_SKILLSET_INVALID_TRUST_STORE')
+    expect(fetched).toEqual([])
+  })
+
+  it('a malformed store warns once and is ignored for a built-in provider', async () => {
+    const dir = project()
+    process.env[CONFIG_DIR_ENV] = dir
+    const storePath = join(dir, TRUST_STORE_FILENAME)
+    writeFileSync(storePath, '{ nope')
+    const cwd = project()
+    const url = `${DEFAULT_DIRECTORY}/trusted-set/trusted-set.skill-set.json`
+    const { fetcher, fetched } = serving(url, 'trusted-set')
+    const { code, out, err } = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run', '--json'], { fetcher })
+    expect(code).toBe(0)
+    expect(fetched).toEqual([url])
+    expect((JSON.parse(out) as { data: { trust: unknown } }).data.trust).toEqual({ state: 'allowlisted', host: 'skill-sets.md' })
+    expect(err).toContain(`warning: ignoring the trusted sources file at ${storePath}`)
+    expect(err).toContain('Delete it to clear this warning.')
+    expect(err.match(/warning: ignoring/g)).toHaveLength(1)
+    expect(readFileSync(storePath, 'utf8')).toBe('{ nope')
   })
 })
 
@@ -2163,8 +2272,47 @@ describe('add --dry-run --json payload', () => {
     expect(envelope.data.trust).toEqual({ state: 'confirmed', host: 'raw.githubusercontent.com', owner: 'hcjmartin' })
   })
 
-  it('still refuses an unrecognised host without --yes before fetching, now naming the host', async () => {
+  it('still refuses an unrecognised host without --yes before fetching, naming the host and the trust command', async () => {
     const { code, envelope, fetched } = await dryRun('https://unknown-origin.invalid/bare.skill-set.json', minimal)
+    expect(code).toBe(2)
+    expect(fetched).toEqual([])
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error).toMatchObject({
+      code: 'ERR_SKILLSET_CONFIRM_REQUIRED',
+      hint: expect.stringContaining('skill-set trust unknown-origin.invalid') as string,
+      data: { host: 'unknown-origin.invalid', question: expect.stringContaining('unknown-origin.invalid') as string },
+    })
+  })
+
+  it('a human dry run on an unrecognised host prompts before fetching; "no" aborts with nothing fetched', async () => {
+    const cwd = project()
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return { ok: true as const, data: JSON.stringify(minimal) }
+    }
+    const url = 'https://unknown-origin.invalid/bare.skill-set.json'
+    const declined = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run'], { fetcher, confirmAnswers: [false] })
+    expect(declined.code).toBe(0)
+    expect(declined.out).toContain('Aborted — nothing fetched.')
+    expect(fetched).toEqual([])
+
+    const accepted = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run'], { fetcher, confirmAnswers: [true] })
+    expect(accepted.code).toBe(0)
+    expect(fetched).toEqual([url])
+    expect(accepted.out).toContain('dry run — no files changed')
+    expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
+  })
+
+  it('the real add still refuses an unrecognised host under --json before fetching, naming the host', async () => {
+    const cwd = project()
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return { ok: true as const, data: JSON.stringify(minimal) }
+    }
+    const { code, out } = await cli(cwd, fakeSkills(cwd), ['add', 'https://unknown-origin.invalid/bare.skill-set.json', '--json'], { fetcher })
+    const envelope = JSON.parse(out) as { ok: boolean; error: { code: string; hint: string; data: unknown } }
     expect(code).toBe(2)
     expect(fetched).toEqual([])
     expect(envelope.ok).toBe(false)
@@ -2172,6 +2320,8 @@ describe('add --dry-run --json payload', () => {
       code: 'ERR_SKILLSET_CONFIRM_REQUIRED',
       data: { host: 'unknown-origin.invalid', question: expect.stringContaining('unknown-origin.invalid') as string },
     })
+    expect(envelope.error.hint).toContain('skill-set trust unknown-origin.invalid')
+    expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
   })
 
   it('human dry run says when nothing would be verified', async () => {

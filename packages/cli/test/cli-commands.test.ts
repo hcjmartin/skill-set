@@ -2254,29 +2254,35 @@ describe('add --dry-run --json payload', () => {
     expect(envelope.data.trust).toEqual({ state: 'confirmed', host: 'raw.githubusercontent.com', owner: 'hcjmartin' })
   })
 
-  it('reports an unrecognised host as "untrusted" without --yes: the manifest is read, nothing else', async () => {
-    const url = 'https://unknown-origin.invalid/bare.skill-set.json'
-    const { code, envelope, fetched } = await dryRun(url, minimal)
-    expect(code).toBe(0)
-    expect(fetched).toEqual([url])
-    expect(envelope.data.trust).toEqual({ state: 'untrusted', host: 'unknown-origin.invalid' })
-    expect(envelope.data.verification.plan).toBe('sidecar')
-
-    const github = await dryRun('https://raw.githubusercontent.com/hcjmartin/sets/main/bare.skill-set.json', minimal)
-    expect(github.envelope.data.trust).toEqual({ state: 'untrusted', host: 'raw.githubusercontent.com', owner: 'hcjmartin' })
+  it('still refuses an unrecognised host without --yes before fetching, naming the host and the trust command', async () => {
+    const { code, envelope, fetched } = await dryRun('https://unknown-origin.invalid/bare.skill-set.json', minimal)
+    expect(code).toBe(2)
+    expect(fetched).toEqual([])
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error).toMatchObject({
+      code: 'ERR_SKILLSET_CONFIRM_REQUIRED',
+      hint: expect.stringContaining('skill-set trust unknown-origin.invalid') as string,
+      data: { host: 'unknown-origin.invalid', question: expect.stringContaining('unknown-origin.invalid') as string },
+    })
   })
 
-  it('a human dry run on an unrecognised host never prompts and says the source is untrusted', async () => {
+  it('a human dry run on an unrecognised host prompts before fetching; "no" aborts with nothing fetched', async () => {
     const cwd = project()
-    const fetcher: RunOverrides['fetcher'] = async () => ({ ok: true as const, data: JSON.stringify(minimal) })
-    // A scripted "no" would abort at a host prompt; the dry run must not ask.
-    const { code, out } = await cli(cwd, fakeSkills(cwd), ['add', 'https://unknown-origin.invalid/bare.skill-set.json', '--dry-run'], {
-      fetcher,
-      confirmAnswers: [false],
-    })
-    expect(code).toBe(0)
-    expect(out).toContain('untrusted source: "unknown-origin.invalid"')
-    expect(out).toContain('dry run — no files changed')
+    const fetched: string[] = []
+    const fetcher: RunOverrides['fetcher'] = async (url: string) => {
+      fetched.push(url)
+      return { ok: true as const, data: JSON.stringify(minimal) }
+    }
+    const url = 'https://unknown-origin.invalid/bare.skill-set.json'
+    const declined = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run'], { fetcher, confirmAnswers: [false] })
+    expect(declined.code).toBe(0)
+    expect(declined.out).toContain('Aborted — nothing fetched.')
+    expect(fetched).toEqual([])
+
+    const accepted = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run'], { fetcher, confirmAnswers: [true] })
+    expect(accepted.code).toBe(0)
+    expect(fetched).toEqual([url])
+    expect(accepted.out).toContain('dry run — no files changed')
     expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
   })
 

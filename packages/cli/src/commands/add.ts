@@ -65,7 +65,7 @@ function isAllowedHost(host: string): boolean {
 
 /** How the manifest source is trusted; reported by `add --dry-run`. */
 interface SourceTrust {
-  state: 'allowlisted' | 'trusted' | 'confirmed' | 'untrusted' | 'local'
+  state: 'allowlisted' | 'trusted' | 'confirmed' | 'local'
   host?: string
   owner?: string
   /** The matched trust-store entry, `host` or `host/owner`; only with `trusted`. */
@@ -74,15 +74,12 @@ interface SourceTrust {
 
 /**
  * `host` is undefined for a filesystem path. `trusted` is a trust-store match; `confirmed` means
- * the user accepted an unrecognised host; `untrusted` is an unrecognised host nobody accepted.
+ * the user accepted an unrecognised host (nothing is fetched from one otherwise).
  */
-function sourceTrust(source: string, host: string | undefined, store: TrustStore, accepted: boolean): SourceTrust {
+function sourceTrust(source: string, host: string | undefined, store: TrustStore): SourceTrust {
   if (host === undefined) return { state: 'local' }
   const entry = isAllowedHost(host) ? undefined : findTrustedSource(source, store)
-  const trust: SourceTrust = {
-    state: isAllowedHost(host) ? 'allowlisted' : entry !== undefined ? 'trusted' : accepted ? 'confirmed' : 'untrusted',
-    host,
-  }
+  const trust: SourceTrust = { state: isAllowedHost(host) ? 'allowlisted' : entry !== undefined ? 'trusted' : 'confirmed', host }
   if (isGithubHost(host)) {
     const owner = urlOwner(new URL(source))
     if (owner !== undefined) trust.owner = owner
@@ -163,9 +160,9 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   ctx.ui.out(`Adding skill-set from ${source}...`)
   if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', 'content will be verified against the provided sha256 hash'))
 
-  // Unrecognised hosts are confirmed before any bytes are fetched; a declined or
-  // unanswerable prompt aborts with nothing fetched. A trust-store entry stands in for the
-  // confirmation. A dry run never prompts: it reads the manifest and reports the source as untrusted.
+  // Unrecognised hosts are confirmed before any bytes are fetched, dry run or not; a declined
+  // or unanswerable prompt aborts with nothing fetched. A trust-store entry stands in for the
+  // confirmation.
   const host = httpsHost(source)
   let store = emptyTrustStore()
   if (host !== undefined) {
@@ -174,8 +171,7 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     store = loaded.data
   }
   const recognised = host === undefined || isAllowedHost(host) || isTrustedSource(source, store)
-  let accepted = false
-  if (host !== undefined && !recognised && (!ctx.dryRun || ctx.ui.yes)) {
+  if (host !== undefined && !recognised) {
     const proceed = await ctx.ui.confirm(`${JSON.stringify(host)} is not a recognised skill-set provider. Fetch from it anyway?`)
     if (!proceed.ok) {
       if (proceed.error.code !== ErrorCodes.CONFIRM_REQUIRED) return proceed
@@ -192,9 +188,8 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
       ctx.ui.out('Aborted — nothing fetched.')
       return { ok: true, data: { added: false } }
     }
-    accepted = true
   }
-  const trust = sourceTrust(source, host, store, accepted)
+  const trust = sourceTrust(source, host, store)
 
   ctx.ui.progress({ event: 'manifest:fetching', source })
   const text = await readManifestSource(source, ctx, store)
@@ -248,9 +243,6 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
     : undefined
 
   if (ctx.dryRun) {
-    if (trust.state === 'untrusted') {
-      ctx.ui.out(ctx.ui.style('dim', `untrusted source: ${JSON.stringify(host)} is not a recognised or trusted provider — a real add asks for confirmation first`))
-    }
     ctx.ui.out(ctx.ui.style('dim', `would write: ${SETS_DIR}/${name}/${name}${MANIFEST_SUFFIX}`))
     ctx.ui.out(ctx.ui.style('dim', `would install: ${manifest.data.skills.join(', ')}`))
     if (hash !== undefined) ctx.ui.out(ctx.ui.style('dim', `would verify: set hash against sha256:${hash}`))

@@ -104,8 +104,7 @@ The event union is defined as a zod schema, `progressEventSchema`, in [`packages
 | --- | --- |
 | `allowlisted` | `host` is a built-in skill-set provider |
 | `trusted` | the source matches an entry in the user's [trusted sources](#trusted-sources); `scope` names that entry, as `host` or `host/owner` |
-| `confirmed` | `host` is neither, and the dry run was given `--yes` |
-| `untrusted` | `host` is neither, and nobody accepted it; a real `add` asks for confirmation first |
+| `confirmed` | `host` is neither, and the user accepted it (`--yes`, or the prompt) before the fetch |
 | `local` | the source is a filesystem path; there is no `host` |
 
 `trust.owner` is set only for a GitHub host (`github.com`, `raw.githubusercontent.com`, `gist.githubusercontent.com`) and is the first path segment of the URL.
@@ -114,8 +113,7 @@ Notes for consumers:
 
 - The manifest is untrusted remote text. Escape `description`, `author`, `homepage` and the member fields before showing them.
 - A dry run does not fetch the author lock, so `sidecar` and `both` say where the lock is looked for, not that one exists. The real `add` reports the outcome as `verified` in its result and as `verify:done.verifiedAgainst` in the progress stream.
-- A dry run on an unrecognised host reads the manifest and reports `untrusted`. Before 0.10.0 it failed with `ERR_SKILLSET_CONFIRM_REQUIRED` unless `--yes` was given.
-- A real `add` (no `--dry-run`) is stricter: an untrusted host needs confirmation before anything is fetched. Under `--json` without `--yes`, it fails with `ERR_SKILLSET_CONFIRM_REQUIRED` and `error.data.host` names the host. Once the user accepts the source, re-run with `--yes`, or record the choice with `skill-set trust`.
+- Nothing is fetched from an unrecognised host without confirmation, dry run or not. Under `--json` without `--yes`, `add` fails with `ERR_SKILLSET_CONFIRM_REQUIRED` before any request and `error.data.host` names the host. Ask the user, then re-run the dry run with `--yes` to fetch and show the manifest for review, or record the choice with `skill-set trust`. The real `add` asks again unless given `--yes`.
 - New fields may be added; ignore what you do not recognise.
 
 ## Trusted sources

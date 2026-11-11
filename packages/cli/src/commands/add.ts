@@ -162,13 +162,16 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
 
   // Unrecognised hosts are confirmed before any bytes are fetched, dry run or not; a declined
   // or unanswerable prompt aborts with nothing fetched. A trust-store entry stands in for the
-  // confirmation.
+  // confirmation. A malformed store cannot block a built-in provider, which never needs it: that
+  // warns and proceeds as if the store were empty. Anywhere else the decision depends on the
+  // file, so it fails.
   const host = httpsHost(source)
   let store = emptyTrustStore()
   if (host !== undefined) {
     const loaded = loadTrustStore()
-    if (!loaded.ok) return loaded
-    store = loaded.data
+    if (loaded.ok) store = loaded.data
+    else if (!isAllowedHost(host)) return loaded
+    else ctx.ui.warn(`warning: ignoring the trusted sources file at ${(loaded.error.data as { path: string }).path}: it is not valid. Delete it to clear this warning.`)
   }
   const recognised = host === undefined || isAllowedHost(host) || isTrustedSource(source, store)
   if (host !== undefined && !recognised) {

@@ -154,4 +154,4 @@ Manage the store with `skill-set trust`:
 
 `<source>` is a manifest URL, a host, or `host/owner`. A URL on a GitHub host gives a `host/owner` entry and a URL anywhere else gives a host entry. `host/owner` on a host that is not GitHub is a usage error. `added`, `existing` and `removed` are entries in the store's shape, and `path` is the store file. `--dry-run` reports the change without writing it.
 
-A missing file is an empty store. A file that does not match the shape fails `add` (for `https://` sources) and `trust` with `ERR_SKILLSET_INVALID_TRUST_STORE` and is left as it is.
+A missing file is an empty store. A file that does not match the shape is left as it is: `trust` fails with `ERR_SKILLSET_INVALID_TRUST_STORE`, and so does `add` from any `https://` host that is not a built-in provider, because the decision depends on the file. `add` from a built-in provider prints a one-line warning on stderr naming the file and continues as if the store were empty.

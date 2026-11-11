@@ -726,7 +726,7 @@ describe('add — trusted sources store', () => {
     expect(existsSync(join(cwd, SETS_DIR))).toBe(false)
   })
 
-  it('a malformed store stops add before any fetch', async () => {
+  it('a malformed store stops add from an unrecognised host before any fetch', async () => {
     const dir = project()
     process.env[CONFIG_DIR_ENV] = dir
     writeFileSync(join(dir, TRUST_STORE_FILENAME), '{"version":1,"sources":"nope"}')
@@ -737,6 +737,24 @@ describe('add — trusted sources store', () => {
     expect(code).toBe(1)
     expect((JSON.parse(out) as { error: { code: string } }).error.code).toBe('ERR_SKILLSET_INVALID_TRUST_STORE')
     expect(fetched).toEqual([])
+  })
+
+  it('a malformed store warns once and is ignored for a built-in provider', async () => {
+    const dir = project()
+    process.env[CONFIG_DIR_ENV] = dir
+    const storePath = join(dir, TRUST_STORE_FILENAME)
+    writeFileSync(storePath, '{ nope')
+    const cwd = project()
+    const url = `${DEFAULT_DIRECTORY}/trusted-set/trusted-set.skill-set.json`
+    const { fetcher, fetched } = serving(url, 'trusted-set')
+    const { code, out, err } = await cli(cwd, fakeSkills(cwd), ['add', url, '--dry-run', '--json'], { fetcher })
+    expect(code).toBe(0)
+    expect(fetched).toEqual([url])
+    expect((JSON.parse(out) as { data: { trust: unknown } }).data.trust).toEqual({ state: 'allowlisted', host: 'skill-sets.md' })
+    expect(err).toContain(`warning: ignoring the trusted sources file at ${storePath}`)
+    expect(err).toContain('Delete it to clear this warning.')
+    expect(err.match(/warning: ignoring/g)).toHaveLength(1)
+    expect(readFileSync(storePath, 'utf8')).toBe('{ nope')
   })
 })
 

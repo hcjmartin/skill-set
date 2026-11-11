@@ -155,6 +155,23 @@ describe('fetchManifest', () => {
       expect(fetched).toHaveBeenCalledTimes(1)
     })
 
+    it('refuses a same-host redirect that leaves a trusted owner scope', async () => {
+      const start = 'https://raw.githubusercontent.com/hcjmartin/sets/main/a.skill-set.json'
+      const fetched = stub(() => redirect('https://raw.githubusercontent.com/evil/sets/main/a.skill-set.json'))
+      const result = await fetchManifest(start, store)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error.message).toContain('redirected outside the trusted scope raw.githubusercontent.com/hcjmartin')
+      expect(fetched).toHaveBeenCalledTimes(1)
+    })
+
+    it('follows a same-host redirect that stays inside a trusted owner scope, or on a confirmed host', async () => {
+      const start = 'https://raw.githubusercontent.com/hcjmartin/sets/main/a.skill-set.json'
+      stub((url) => (url.includes('/moved') ? new Response('ok') : redirect(url.replace('/a.skill-set.json', '/moved'))))
+      expect((await fetchManifest(start, store)).ok).toBe(true)
+      // A confirmed host has no store entry, so its grant is the whole host, as before.
+      expect((await fetchManifest('https://example.test/a.skill-set.json', store)).ok).toBe(true)
+    })
+
     it('refuses a redirect to an untrusted host, with or without a store', async () => {
       const fetched = stub(() => redirect('https://elsewhere.test/x'))
       for (const result of [await fetchManifest('https://example.test/start', store), await fetchManifest('https://example.test/start')]) {

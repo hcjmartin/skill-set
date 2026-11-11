@@ -669,8 +669,11 @@ async function readManifestSource(source: string, ctx: CommandContext, store: Tr
 export async function fetchManifest(url: string, store: TrustStore = emptyTrustStore()): Promise<Result<string>> {
   // The initial host was already accepted by the command (allowlisted, trusted or confirmed);
   // the redirect follower keeps requests on that host, an allowlisted one or a location the
-  // trust store covers, never anywhere else.
+  // trust store covers, never anywhere else. A grant scoped to one GitHub owner is narrower
+  // than the host, so a same-host hop then has to stay inside the store's trust as well.
   const initialHost = httpsHost(url)
+  const initialEntry = initialHost === undefined || isAllowedHost(initialHost) ? undefined : findTrustedSource(url, store)
+  const hostWide = initialEntry?.owner === undefined
   let current = url
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     let response: Response
@@ -688,8 +691,13 @@ export async function fetchManifest(url: string, store: TrustStore = emptyTrustS
       current = new URL(location, current).toString()
       if (!current.startsWith('https://')) return fetchFail(url, 'redirected to a non-HTTPS location')
       const nextHost = new URL(current).host
-      if (!isAllowedHost(nextHost) && nextHost !== initialHost && !isTrustedSource(current, store)) {
-        return fetchFail(url, `redirected to unrecognised host ${nextHost}`, 'Redirects must stay on the original host, a recognised skill-set host or a trusted source.')
+      if (!isAllowedHost(nextHost) && !isTrustedSource(current, store)) {
+        if (nextHost !== initialHost) {
+          return fetchFail(url, `redirected to unrecognised host ${nextHost}`, 'Redirects must stay on the original host, a recognised skill-set host or a trusted source.')
+        }
+        if (!hostWide) {
+          return fetchFail(url, `redirected outside the trusted scope ${sourceScope(initialEntry!)}`, 'Redirects from a source trusted by owner must stay with that owner, or go to a recognised or trusted source.')
+        }
       }
       continue
     }

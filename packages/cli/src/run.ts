@@ -32,7 +32,7 @@ const COMMANDS: Record<string, CommandEntry> = {
   verify: { usage: 'verify [<set>] [--frozen]', describe: 'Verify installed content against each set lock (frozen: require the lock)', handler: cmdVerify },
   update: { usage: 'update <set>', describe: 'Update members via the skills CLI, then re-lock', handler: cmdUpdate },
   remove: { usage: 'remove <set>', describe: 'Remove a set definition, optionally remove skills not otherwise in use', handler: cmdRemove },
-  trust: { usage: 'trust <source> [--list] [--remove]', describe: 'Trust a manifest source, so add fetches from it without asking', handler: cmdTrust },
+  trust: { usage: 'trust <source> | --list | --remove <source>', describe: 'Trust a manifest source, so add fetches from it without asking', handler: cmdTrust },
 }
 
 const TAGLINE = 'define, share, and install named, versioned sets of agent skills'

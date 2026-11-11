@@ -57,7 +57,7 @@ The event union is defined as a zod schema, `progressEventSchema`, in [`packages
 
 ## Dry-run payload
 
-`skill-set add <source> --dry-run --json` fetches and validates the manifest, then stops: nothing is written, no skill is installed and the author lock is not fetched. It never asks for confirmation, whatever the source. The `data` of the result describes what a real `add` would do:
+`skill-set add <source> --dry-run --json` fetches and validates the manifest, then stops: nothing is written, no skill is installed and the author lock is not fetched. It confirms an unrecognised host before fetching, like a real `add` (under `--json`, that is the `ERR_SKILLSET_CONFIRM_REQUIRED` failure described below). The `data` of the result describes what a real `add` would do:
 
 ```json
 {
@@ -142,7 +142,7 @@ An entry matches an `https://` manifest URL by these rules:
 - An entry without `owner` trusts everything on that host. On a GitHub host that means every account.
 - An entry with `owner` applies only on a GitHub host (`github.com`, `raw.githubusercontent.com`, `gist.githubusercontent.com`) and matches when the URL's first path segment equals `owner`, ignoring case. On any other host it matches nothing.
 
-Redirects follow the same rules: `add` follows a redirect to the original host, a built-in provider or a location the store trusts, and refuses any other.
+Redirects follow the same rules: `add` follows a redirect to the original host, a built-in provider or a location the store trusts, and refuses any other. When the source was trusted by owner, a redirect on the same host must stay with that owner too.
 
 Manage the store with `skill-set trust`:
 
@@ -152,6 +152,6 @@ Manage the store with `skill-set trust`:
 | `trust --list` | print the built-in providers and the entries | `{ sources, path }`; built-in providers are `{ host, builtIn: true }` |
 | `trust --remove <source>` | remove an entry | `{ removed, path }`; `removed` is `null` when there was no such entry |
 
-`<source>` is a manifest URL, a host, or `host/owner`. A URL on a GitHub host gives a `host/owner` entry and a URL anywhere else gives a host entry. `host/owner` on a host that is not GitHub is a usage error. `added`, `existing` and `removed` are entries in the store's shape, and `path` is the store file. `--dry-run` reports the change without writing it.
+`<source>` is a manifest URL, a host, or `host/owner`. A URL on a GitHub host with an owner segment gives a `host/owner` entry and a URL anywhere else gives a host entry. `host/owner` on a host that is not GitHub is a usage error. `added`, `existing` and `removed` are entries in the store's shape, and `path` is the store file. `--dry-run` reports the change without writing it.
 
 A missing file is an empty store. A file that does not match the shape is left as it is: `trust` fails with `ERR_SKILLSET_INVALID_TRUST_STORE`, and so does `add` from any `https://` host that is not a built-in provider, because the decision depends on the file. `add` from a built-in provider prints a one-line warning on stderr naming the file and continues as if the store were empty.

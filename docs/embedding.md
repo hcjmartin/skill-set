@@ -57,7 +57,7 @@ The event union is defined as a zod schema, `progressEventSchema`, in [`packages
 
 ## Dry-run payload
 
-`skill-set add <source> --dry-run --json` fetches and validates the manifest, then stops: nothing is written, no skill is installed and the author lock is not fetched. The `data` of the result describes what a real `add` would do:
+`skill-set add <source> --dry-run --json` fetches and validates the manifest, then stops: nothing is written, no skill is installed and the author lock is not fetched. It never asks for confirmation, whatever the source. The `data` of the result describes what a real `add` would do:
 
 ```json
 {
@@ -102,8 +102,10 @@ The event union is defined as a zod schema, `progressEventSchema`, in [`packages
 
 | `state` | Meaning |
 | --- | --- |
-| `allowlisted` | `host` is a recognised skill-set provider |
-| `confirmed` | `host` is not recognised and the user accepted it, at the prompt or with `--yes` |
+| `allowlisted` | `host` is a built-in skill-set provider |
+| `trusted` | the source matches an entry in the user's [trusted sources](#trusted-sources); `scope` names that entry, as `host` or `host/owner` |
+| `confirmed` | `host` is neither, and the dry run was given `--yes` |
+| `untrusted` | `host` is neither, and nobody accepted it; a real `add` asks for confirmation first |
 | `local` | the source is a filesystem path; there is no `host` |
 
 `trust.owner` is set only for a GitHub host (`github.com`, `raw.githubusercontent.com`, `gist.githubusercontent.com`) and is the first path segment of the URL.
@@ -112,5 +114,46 @@ Notes for consumers:
 
 - The manifest is untrusted remote text. Escape `description`, `author`, `homepage` and the member fields before showing them.
 - A dry run does not fetch the author lock, so `sidecar` and `both` say where the lock is looked for, not that one exists. The real `add` reports the outcome as `verified` in its result and as `verify:done.verifiedAgainst` in the progress stream.
-- An unrecognised host needs confirmation before anything is fetched. Under `--json` without `--yes`, the command fails with `ERR_SKILLSET_CONFIRM_REQUIRED` and `error.data.host` names the host; re-run with `--yes` once the user accepts it.
+- A dry run on an unrecognised host reads the manifest and reports `untrusted`. Before 0.10.0 it failed with `ERR_SKILLSET_CONFIRM_REQUIRED` unless `--yes` was given.
+- A real `add` (no `--dry-run`) is stricter: an untrusted host needs confirmation before anything is fetched. Under `--json` without `--yes`, it fails with `ERR_SKILLSET_CONFIRM_REQUIRED` and `error.data.host` names the host. Once the user accepts the source, re-run with `--yes`, or record the choice with `skill-set trust`.
 - New fields may be added; ignore what you do not recognise.
+
+## Trusted sources
+
+`add` fetches without asking from the built-in providers (`skill-set.md`, `skill-sets.md`) and from any source in the user's trust store. The store is one JSON file per user, shared by every project:
+
+```json
+{
+  "version": 1,
+  "sources": [
+    { "host": "sets.example.com", "addedAt": "2026-11-11T09:40:21.512Z" },
+    { "host": "raw.githubusercontent.com", "owner": "ada-example", "addedAt": "2026-11-11T09:41:02.007Z" }
+  ]
+}
+```
+
+It is `trusted-sources.json` in the first of these directories that applies, on every platform:
+
+1. `$SKILL_SET_CONFIG_DIR`
+2. `$XDG_CONFIG_HOME/skill-set`
+3. `~/.config/skill-set`
+
+An entry matches an `https://` manifest URL by these rules:
+
+- `host` must equal the URL's host exactly, port included, ignoring case. Subdomains are not covered.
+- An entry without `owner` trusts everything on that host. On a GitHub host that means every account.
+- An entry with `owner` applies only on a GitHub host (`github.com`, `raw.githubusercontent.com`, `gist.githubusercontent.com`) and matches when the URL's first path segment equals `owner`, ignoring case. On any other host it matches nothing.
+
+Redirects follow the same rules: `add` follows a redirect to the original host, a built-in provider or a location the store trusts, and refuses any other.
+
+Manage the store with `skill-set trust`:
+
+| Command | Effect | `--json` `data` |
+| --- | --- | --- |
+| `trust <source>` | add an entry | `{ added, path }`, or `{ added: null, existing, path }` when it was already trusted |
+| `trust --list` | print the built-in providers and the entries | `{ sources, path }`; built-in providers are `{ host, builtIn: true }` |
+| `trust --remove <source>` | remove an entry | `{ removed, path }`; `removed` is `null` when there was no such entry |
+
+`<source>` is a manifest URL, a host, or `host/owner`. A URL on a GitHub host gives a `host/owner` entry and a URL anywhere else gives a host entry. `host/owner` on a host that is not GitHub is a usage error. `added`, `existing` and `removed` are entries in the store's shape, and `path` is the store file. `--dry-run` reports the change without writing it.
+
+A missing file is an empty store. A file that does not match the shape fails `add` (for `https://` sources) and `trust` with `ERR_SKILLSET_INVALID_TRUST_STORE` and is left as it is.

@@ -6,7 +6,7 @@ import { MANIFEST_SUFFIX, NAME_PATTERN, parseManifest, type Manifest } from '../
 import { loadLockIfPresent, SETS_DIR, setPaths, writeIndex, writeSetPage } from '../project.ts'
 import { parseLocator, reservedMembers, reservedNameError, SKILLS_DIR, skillsUpstream } from '../resolver.ts'
 import { localContentMismatches, removeStagingProject, reportLocalDrift, stageManifestMembers } from '../staging.ts'
-import { emptyTrustStore, findTrustedSource, isGithubHost, isTrustedSource, loadTrustStore, sourceScope, urlOwner, type TrustStore } from '../trust.ts'
+import { CONFIG_DIR_ENV, emptyTrustStore, findTrustedSource, isGithubHost, isTrustedSource, loadTrustStore, sourceScope, trustStorePath, urlOwner, type TrustStore } from '../trust.ts'
 import { installSet } from './install.ts'
 import { lockSet } from './lock.ts'
 import { formatInvocation, plural, splitFlags, usageError, type CommandContext, type CommandResult } from './context.ts'
@@ -164,14 +164,20 @@ export async function cmdAdd(args: string[], ctx: CommandContext): Promise<Comma
   // or unanswerable prompt aborts with nothing fetched. A trust-store entry stands in for the
   // confirmation. A malformed store cannot block a built-in provider, which never needs it: that
   // warns and proceeds as if the store were empty. Anywhere else the decision depends on the
-  // file, so it fails.
+  // file, so it fails. A store that cannot be located at all (no home directory) is flagged and
+  // treated as empty everywhere: that is exactly the pre-store behaviour.
   const host = httpsHost(source)
   let store = emptyTrustStore()
   if (host !== undefined) {
-    const loaded = loadTrustStore()
-    if (loaded.ok) store = loaded.data
-    else if (!isAllowedHost(host)) return loaded
-    else ctx.ui.warn(`warning: ignoring the trusted sources file at ${(loaded.error.data as { path: string }).path}: it is not valid. Delete it to clear this warning.`)
+    const path = trustStorePath()
+    if (path === undefined) {
+      ctx.ui.warn(`warning: no home directory, so the trusted sources file cannot be located; set ${CONFIG_DIR_ENV} to use one. Continuing without it.`)
+    } else {
+      const loaded = loadTrustStore(path)
+      if (loaded.ok) store = loaded.data
+      else if (!isAllowedHost(host)) return loaded
+      else ctx.ui.warn(`warning: ignoring the trusted sources file at ${path}: it is not valid. Delete it to clear this warning.`)
+    }
   }
   const recognised = host === undefined || isAllowedHost(host) || isTrustedSource(source, store)
   if (host !== undefined && !recognised) {

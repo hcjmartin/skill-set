@@ -50,6 +50,15 @@ describe('trust store location', () => {
     expect(trustStorePath({})).toBe(join(homedir(), '.config', 'skill-set', TRUST_STORE_FILENAME))
     expect(trustStorePath({ SKILL_SET_CONFIG_DIR: '', XDG_CONFIG_HOME: '' })).toBe(join(homedir(), '.config', 'skill-set', TRUST_STORE_FILENAME))
   })
+
+  it('is undefined when there is no override and no home directory, and does not look up the home otherwise', () => {
+    const noHome = (): string => {
+      throw new Error('no home')
+    }
+    expect(trustStorePath({}, noHome)).toBeUndefined()
+    expect(trustStorePath({ XDG_CONFIG_HOME: '/xdg' }, noHome)).toBe(join('/xdg', 'skill-set', TRUST_STORE_FILENAME))
+    expect(trustStorePath({ SKILL_SET_CONFIG_DIR: '/cfg' }, noHome)).toBe(join('/cfg', TRUST_STORE_FILENAME))
+  })
 })
 
 describe('trust store load and save', () => {

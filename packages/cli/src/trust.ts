@@ -31,17 +31,36 @@ export function emptyTrustStore(): TrustStore {
   return { version: TRUST_STORE_VERSION, sources: [] }
 }
 
-/** `$SKILL_SET_CONFIG_DIR`, else `$XDG_CONFIG_HOME/skill-set`, else `~/.config/skill-set` — on every platform. */
-export function trustStorePath(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * `$SKILL_SET_CONFIG_DIR`, else `$XDG_CONFIG_HOME/skill-set`, else `~/.config/skill-set` — on every
+ * platform. `undefined` when none of those resolves: no override and no home directory (a
+ * container user with no `HOME` and no passwd entry). Callers decide what that means.
+ */
+export function trustStorePath(env: NodeJS.ProcessEnv = process.env, home: () => string = homedir): string | undefined {
   const override = env[CONFIG_DIR_ENV]
   if (override !== undefined && override !== '') return join(override, TRUST_STORE_FILENAME)
   const xdg = env.XDG_CONFIG_HOME
-  const base = xdg !== undefined && xdg !== '' ? xdg : join(homedir(), '.config')
-  return join(base, 'skill-set', TRUST_STORE_FILENAME)
+  if (xdg !== undefined && xdg !== '') return join(xdg, 'skill-set', TRUST_STORE_FILENAME)
+  try {
+    return join(home(), '.config', 'skill-set', TRUST_STORE_FILENAME)
+  } catch {
+    return undefined
+  }
+}
+
+/** The error for a store that cannot be located; `add` instead warns and carries on without one. */
+export function unresolvableTrustStore(): Result<never> {
+  return {
+    ok: false,
+    error: new SkillSetError(ErrorCodes.UNEXPECTED, 'The trusted sources file cannot be located: no home directory.', {
+      hint: `Set ${CONFIG_DIR_ENV} (or XDG_CONFIG_HOME) to a writable directory.`,
+    }),
+  }
 }
 
 /** A missing file is an empty store; a malformed one fails and is left untouched. */
-export function loadTrustStore(path: string = trustStorePath()): Result<TrustStore> {
+export function loadTrustStore(path: string | undefined = trustStorePath()): Result<TrustStore> {
+  if (path === undefined) return unresolvableTrustStore()
   if (!existsSync(path)) return { ok: true, data: emptyTrustStore() }
   let raw: unknown
   try {
@@ -69,7 +88,8 @@ function invalid(path: string, detail: string, extra: { cause?: unknown; data?: 
 }
 
 /** Atomic: written beside the target, then renamed over it. */
-export function saveTrustStore(store: TrustStore, path: string = trustStorePath()): Result<string> {
+export function saveTrustStore(store: TrustStore, path: string | undefined = trustStorePath()): Result<string> {
+  if (path === undefined) return unresolvableTrustStore()
   const temp = `${path}.${process.pid}.tmp`
   try {
     mkdirSync(dirname(path), { recursive: true })
